@@ -18,12 +18,12 @@ from pathlib import Path
 
 from qdrant_client import QdrantClient
 
-SECRETS_DIR = Path.home() / ".secrets"
+SECRETS_DIR = Path.home() / ".secrets" / "dev"
 
 QDRANT_URL = "https://qdrant.eltrue:443"
 CA_CERT = SECRETS_DIR / "eltrue-ca.crt"
-CLIENT_CERT = SECRETS_DIR / "eltrue-client.crt"
-CLIENT_KEY = SECRETS_DIR / "eltrue-client.key"
+CLIENT_CERT = SECRETS_DIR / "eltrue-client-tls.crt"
+CLIENT_KEY = SECRETS_DIR / "eltrue-client-tls.key"
 API_KEY_FILE = SECRETS_DIR / "qdrant-api-key"
 
 
