@@ -607,40 +607,82 @@ if __name__ == "__main__":
     #   4. optimizer.step() ← THIS IS WHAT WE DO NOW
     #   5. optimizer.zero_grad()
     #
-    # We use AdamW — the optimizer used by GPT-2, GPT-3, BERT, LLaMA,
-    # and virtually all modern transformers.
+    # ── WHAT IS AN OPTIMIZER? ─────────────────────────────────────
     #
-    # AdamW vs SGD:
-    #   SGD:   θ = θ − lr × grad                (just follow the gradient)
-    #   Adam:  θ = θ − lr × m̂/(√v̂ + ε)          (adaptive per-parameter lr)
-    #   AdamW: same as Adam + weight decay       (L2 regularisation, decoupled)
+    # backward() computes GRADIENTS — for each weight w it says:
+    #   "∂loss/∂w = -0.003"  →  "to reduce the loss, increase w a bit"
     #
-    # Adam maintains two "momentum" buffers per parameter:
-    #   m = running mean of gradients        (1st moment — direction)
-    #   v = running mean of squared gradients (2nd moment — magnitude)
-    # These let Adam:
-    #   - Smooth out noisy gradients (m averages over steps)
-    #   - Give larger updates to rarely-updated params (v adapts the scale)
-    #   - Converge faster than plain SGD on transformer-style models
+    # But backward() does NOT CHANGE any weights!  It only fills .grad.
+    # It's optimizer.step() that ACTUALLY updates the weights.
+    #
+    # Why are these separate steps?
+    # Because the UPDATE STRATEGY matters — different optimizers
+    # interpret the same gradient differently:
+    #
+    # ── SGD (Stochastic Gradient Descent) ────────────────────────
+    #   The simplest possible optimizer.  Does exactly:
+    #     w = w − lr × grad
+    #
+    #   Literally "walk downhill along the gradient".
+    #   Pros:  simple, predictable, low memory
+    #   Cons:  slow convergence on transformers, sensitive to lr
+    #
+    # ── AdamW (Adaptive Moment Estimation + Weight Decay) ────────
+    #   Used by GPT-2, GPT-3, BERT, LLaMA — the industry standard.
+    #   For EACH parameter it maintains 2 extra buffers:
+    #
+    #   m = running average of gradients        (1st moment — direction)
+    #       m = β₁ × m + (1−β₁) × grad
+    #       β₁ = 0.9 → "remember 90% of the previous direction"
+    #       Effect: smooths out noise, no random jumping
+    #
+    #   v = running average of gradients²       (2nd moment — magnitude)
+    #       v = β₂ × v + (1−β₂) × grad²
+    #       β₂ = 0.999 → "remember how big gradients have been"
+    #       Effect: normalises step size — large grads → smaller step
+    #
+    #   Update rule:  w = w − lr × m̂/(√v̂ + ε)
+    #     m̂, v̂ = bias correction (because m,v start at 0)
+    #     ε = 1e-8 (to avoid division by zero)
+    #
+    #   + Weight Decay:  w = w × (1 − lr × weight_decay)
+    #     Gently shrinks weights → regularisation (prevents overfitting)
+    #
+    #   Pros:  fast convergence, adaptive lr per-parameter
+    #   Cons:  2× more memory (m and v buffers for every weight)
+    #
+    # ── Concrete example (one parameter) ─────────────────────────
+    #   grad = -0.5,  lr = 0.001
+    #
+    #   SGD:    w = w − 0.001 × (−0.5) = w + 0.0005
+    #           (simple step proportional to gradient)
+    #
+    #   AdamW:  step depends on gradient HISTORY!
+    #           If grad was large for many steps → smaller step
+    #           If grad was small for many steps → larger step
+    #           (adapts to each parameter individually)
 
     lr = 1e-3
-    # weight_decay = 0.01 is standard for transformers.
-    # It gently shrinks all weights toward zero each step,
-    # preventing any single weight from growing too large.
-    # This is a form of regularisation (like L2 penalty).
     weight_decay = 0.01
 
     # ── Collect ALL parameters from both model parts ─────────────────
-    # itertools.chain joins the two parameter iterators into one.
-    # The optimizer needs to know about EVERY parameter it should update.
     import itertools
     all_params = list(itertools.chain(block.parameters(), head.parameters()))
     num_params = sum(p.numel() for p in all_params)
 
+    # ── AdamW — the industry-standard optimizer for transformers ──────
     optimizer = torch.optim.AdamW(all_params, lr=lr, weight_decay=weight_decay)
     # The optimizer is now "linked" to all_params.
     # When we call optimizer.step(), it reads each param's .grad
     # and updates the param's .data in-place.
+
+    # ── SGD (commented out — try it to see slower convergence!) ───────
+    # Does EXACTLY:  w = w − lr × grad   (for every weight)
+    # Nothing more — no buffers, no momentum, no adaptation.
+    # Same formula you'd write by hand in a loop:
+    #   for p in all_params:
+    #       p.data -= lr * p.grad
+    # optimizer = torch.optim.SGD(all_params, lr=lr)
 
     print(f"\n  Optimizer:    AdamW")
     print(f"  LR:           {lr}")

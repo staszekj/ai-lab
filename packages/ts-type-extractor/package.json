@@ -1,0 +1,20 @@
+{
+  "name": "ts-type-extractor",
+  "version": "0.1.0",
+  "description": "Extract TypeScript type annotations from React codebases for ML training data",
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "extract": "tsx src/extract.ts",
+    "degrade": "tsx src/degrade.ts",
+    "start": "tsx src/extract.ts"
+  },
+  "dependencies": {
+    "ts-morph": "^24.0.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.0",
+    "tsx": "^4.19.0",
+    "@types/node": "^22.0.0"
+  }
+}
