@@ -693,77 +693,192 @@ if __name__ == "__main__":
     print(f"  that would indicate vanishing gradients.")
 
     # ==================================================================
-    # PHASE 4: AUTOREGRESSIVE GENERATION
+    # PHASE 4: GENERATION BEFORE TRAINING (baseline — random output)
     # ==================================================================
     print(f"\n{'#'*60}")
-    print(f"# PHASE 4: AUTOREGRESSIVE GENERATION")
+    print(f"# PHASE 4: GENERATION BEFORE TRAINING (untrained model)")
     print(f"{'#'*60}")
 
-    # Start with a short "prompt" of 5 tokens
-    prompt = torch.randint(0, vocab_size, (1, 5))
-    print(f"\nPrompt: {prompt[0].tolist()}")
-    print(f"  (random IDs — in a real model these would be tokenised text)")
+    # We'll use the FIRST sample from our batch as the "memorisation target".
+    # The model should learn to reproduce this exact sequence.
+    target_sequence = input_ids[0:1]  # (1, 20)
+    # Use the first 5 tokens as prompt, the remaining 15 as expected output.
+    prompt_len = 5
+    prompt = target_sequence[:, :prompt_len]              # (1, 5)
+    expected_continuation = target_sequence[0, prompt_len:]  # (15,)
 
-    # Generate 15 new tokens
-    generated = model.generate(
-        prompt,
-        max_new_tokens=15,
+    print(f"\n  Target sequence:        {target_sequence[0].tolist()}")
+    print(f"  Prompt (first {prompt_len}):       {prompt[0].tolist()}")
+    print(f"  Expected continuation:  {expected_continuation.tolist()}")
+
+    # Generate from the untrained model — should be random garbage
+    generated_before = model.generate(
+        prompt.clone(),
+        max_new_tokens=seq_len - prompt_len,
         temperature=0.8,
     )
+    gen_before_tokens = generated_before[0, prompt_len:].tolist()
+    expected_tokens = expected_continuation.tolist()
 
-    print(f"\nFull generated sequence: {generated[0].tolist()}")
-    print(f"  Prompt tokens (given):    {prompt[0].tolist()}")
-    print(f"  Generated tokens (new):   {generated[0, 5:].tolist()}")
-    print(f"\n  Note: This is an UNTRAINED model, so the generated tokens")
-    print(f"  are essentially random. After training on real text, the")
-    print(f"  model would generate coherent continuations.")
+    # Count how many tokens match
+    matches_before = sum(g == e for g, e in zip(gen_before_tokens, expected_tokens))
+    print(f"\n  Generated (untrained):  {gen_before_tokens}")
+    print(f"  Expected:               {expected_tokens}")
+    print(f"  Matches: {matches_before}/{len(expected_tokens)}")
+    print(f"  (Random chance ≈ {1/vocab_size:.4f} per token = ~0 matches)")
 
     # ==================================================================
-    # SUMMARY
+    # PHASE 5: TRAINING LOOP — teach model to memorise the sequence
     # ==================================================================
     print(f"\n{'#'*60}")
-    print(f"# SUMMARY: MINI-GPT ARCHITECTURE")
+    print(f"# PHASE 5: TRAINING LOOP (AdamW, memorise one sequence)")
     print(f"{'#'*60}")
-    print(f"""
-    Input token IDs: (batch, seq_len)
-           │
-           ▼
-    ┌─────────────────────────────┐
-    │   Token Embedding           │  (vocab_size, d_model)
-    │ + Positional Embedding      │  (max_seq_len, d_model)
-    └─────────────┬───────────────┘
-                  │  (batch, seq, {d_model})
-                  ▼
-    ┌─────────────────────────────┐
-    │   Decoder Block 0           │  causal self-attention + FFN
-    │   (Pre-LN + residual)       │
-    └─────────────┬───────────────┘
-                  │  (batch, seq, {d_model})
-                  ▼
-    ┌─────────────────────────────┐
-    │   Decoder Block 1           │  same architecture, different weights
-    └─────────────┬───────────────┘
-                  │
-                  ▼
-    ┌─────────────────────────────┐
-    │   Decoder Block 2           │
-    └─────────────┬───────────────┘
-                  │
-                  ▼
-    ┌─────────────────────────────┐
-    │   Decoder Block 3           │
-    └─────────────┬───────────────┘
-                  │  (batch, seq, {d_model})
-                  ▼
-    ┌─────────────────────────────┐
-    │   Final LayerNorm           │
-    └─────────────┬───────────────┘
-                  │  (batch, seq, {d_model})
-                  ▼
-    ┌─────────────────────────────┐
-    │   LM Head (Linear)          │  (d_model → vocab_size)
-    └─────────────┬───────────────┘
-                  │  (batch, seq, {vocab_size})
-                  ▼
-           Output logits
-    """)
+
+    # ── Set up the optimizer ─────────────────────────────────────────
+    # AdamW is the standard optimizer for transformers.
+    # lr=1e-3 is aggressive but fine for memorisation of a tiny batch.
+    lr = 1e-3
+    weight_decay = 0.01
+    optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
+
+    print(f"\n  Optimizer:    AdamW (lr={lr}, weight_decay={weight_decay})")
+    print(f"  Training data: {input_ids.shape}  ({batch_size} sequences of {seq_len} tokens)")
+    print(f"  Goal: memorise these sequences (overfit on purpose)")
+
+    # ── Training loop ────────────────────────────────────────────────
+    # Each step:
+    #   1. Forward:  model(input_ids) → logits
+    #   2. Loss:     cross-entropy(logits shifted by 1, targets)
+    #   3. Backward: loss.backward() → compute all gradients
+    #   4. Step:     optimizer.step() → update all weights
+    #   5. Zero:     optimizer.zero_grad() → reset for next iteration
+    #
+    # We train on the SAME batch every step — this is OVERFITTING.
+    # That's intentional: we want to prove the model CAN learn.
+    # In real training you'd use different batches each step.
+
+    num_steps = 50
+    initial_loss = None
+
+    print(f"  Training for {num_steps} steps...\n")
+
+    for step in range(num_steps):
+        # ── 1. Forward pass (verbose=False to suppress shape logs) ───
+        logits = model(input_ids, verbose=False)
+        # logits: (batch_size, seq_len, vocab_size)
+
+        # ── 2. Loss (next-token prediction) ──────────────────────────
+        # We use PyTorch's fused CrossEntropyLoss for speed.
+        # It does exactly what our manual language_model_loss() does:
+        #   shift logits by 1, flatten, cross-entropy.
+        shift_logits = logits[:, :-1, :].reshape(-1, vocab_size)
+        shift_targets = input_ids[:, 1:].reshape(-1)
+        step_loss = nn.CrossEntropyLoss()(shift_logits, shift_targets)
+
+        if initial_loss is None:
+            initial_loss = step_loss.item()
+
+        # ── 3. Backward ──────────────────────────────────────────────
+        step_loss.backward()
+
+        # ── 4. Optimizer step ────────────────────────────────────────
+        optimizer.step()
+
+        # ── 5. Zero gradients ────────────────────────────────────────
+        optimizer.zero_grad(set_to_none=True)
+
+        # ── Compute accuracy (how many next tokens predicted correctly) ──
+        with torch.no_grad():
+            predictions = logits[:, :-1, :].argmax(dim=-1)  # (batch, seq-1)
+            targets_check = input_ids[:, 1:]                 # (batch, seq-1)
+            correct = (predictions == targets_check).sum().item()
+            total = targets_check.numel()
+            accuracy = correct / total
+
+        # Log every 5 steps + first and last
+        if step % 5 == 0 or step == num_steps - 1:
+            print(f"  Step {step+1:>3}/{num_steps}  "
+                  f"loss={step_loss.item():.4f}  "
+                  f"accuracy={accuracy:.1%}  "
+                  f"({correct}/{total} tokens correct)")
+
+    print(f"\n  ── Training summary ──")
+    print(f"  Initial loss: {initial_loss:.4f}  "
+          f"(expected random: {math.log(vocab_size):.4f})")
+    print(f"  Final loss:   {step_loss.item():.4f}")
+    print(f"  Final accuracy: {accuracy:.1%}")
+
+    if accuracy == 1.0:
+        print(f"  ✓ 100% accuracy! The model memorised all {total} "
+              f"next-token predictions.")
+    elif accuracy > 0.9:
+        print(f"  ✓ Nearly there — {accuracy:.1%} accuracy.")
+    else:
+        print(f"  ⚠ Accuracy is {accuracy:.1%} — may need more training steps.")
+
+    # ==================================================================
+    # PHASE 6: GENERATION AFTER TRAINING — the proof!
+    # ==================================================================
+    print(f"\n{'#'*60}")
+    print(f"# PHASE 6: GENERATION AFTER TRAINING")
+    print(f"{'#'*60}")
+
+    # Now we give the model the same prompt (first 5 tokens) and see
+    # if it can reproduce the rest of the sequence from memory.
+    #
+    # This is the KEY test:
+    #   BEFORE training: random tokens (prob ≈ 0.001 per token)
+    #   AFTER training:  exact reproduction (prob → 1.0 per token)
+
+    print(f"\n  Prompt:    {prompt[0].tolist()}")
+    print(f"  Expected:  {expected_tokens}")
+
+    # Use temperature=0.01 (nearly greedy) to get the most likely tokens.
+    # With a well-trained model, the correct next token should have
+    # probability ~1.0, so temperature barely matters.
+    generated_after = model.generate(
+        prompt.clone(),
+        max_new_tokens=seq_len - prompt_len,
+        temperature=0.01,
+    )
+    gen_after_tokens = generated_after[0, prompt_len:].tolist()
+
+    matches_after = sum(g == e for g, e in zip(gen_after_tokens, expected_tokens))
+
+    print(f"\n  ── Comparison ──")
+    print(f"  Before training: {gen_before_tokens}")
+    print(f"  After training:  {gen_after_tokens}")
+    print(f"  Expected:        {expected_tokens}")
+    print(f"")
+    print(f"  Matches BEFORE training: {matches_before}/{len(expected_tokens)}")
+    print(f"  Matches AFTER training:  {matches_after}/{len(expected_tokens)}")
+
+    if matches_after == len(expected_tokens):
+        print(f"\n  ✓ PERFECT! The model reproduces the exact sequence!")
+        print(f"    This proves the full pipeline works end-to-end:")
+        print(f"    Token Embedding → Positional Embedding → "
+              f"{num_layers} Decoder Blocks")
+        print(f"    → LayerNorm → LM Head → CrossEntropy → "
+              f"backward() → AdamW.step()")
+    elif matches_after > matches_before:
+        print(f"\n  ✓ The model learned! {matches_after} matches "
+              f"(up from {matches_before}).")
+        print(f"    More training steps or lower temperature may reach 100%.")
+    else:
+        print(f"\n  ⚠ Generation didn't improve — try more training steps.")
+
+    # ==================================================================
+    # COMPLETE
+    # ==================================================================
+    print(f"\n{'#'*60}")
+    print(f"# COMPLETE — FULL MINI-GPT PIPELINE")
+    print(f"{'#'*60}")
+    print(f"\n  Model:        ManualMiniGPT ({total_params:,} params)")
+    print(f"  Architecture: {num_layers} decoder blocks, {num_heads} heads, "
+          f"d_model={d_model}")
+    print(f"  Vocab:        {vocab_size} tokens")
+    print(f"  Training:     {num_steps} steps, AdamW (lr={lr})")
+    print(f"  Loss:         {initial_loss:.4f} → {step_loss.item():.4f}")
+    print(f"  Accuracy:     0% → {accuracy:.0%}")
+    print(f"  Generation:   {matches_before}/{len(expected_tokens)} → "
+          f"{matches_after}/{len(expected_tokens)} tokens correct")
