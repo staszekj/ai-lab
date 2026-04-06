@@ -143,6 +143,18 @@ print(f"""
         GPT uses a CAUSAL MASK — each token can only attend
         to itself and tokens BEFORE it, never to future tokens.
         This is what makes it "autoregressive".
+
+    ┌──────────────────────────────────────────────────────────────┐
+    │  The transformer block is IDENTICAL for encoder & decoder. │
+    │  The ONLY difference is the attention mask:               │
+    │                                                           │
+    │    DECODER (GPT):   causal mask  → autoregressive         │
+    │    ENCODER (BERT):  no mask       → bidirectional          │
+    │                                                           │
+    │  One line of code switches between them:                  │
+    │    block(x, attn_mask=causal_mask)   # decoder             │
+    │    block(x)                          # encoder             │
+    └──────────────────────────────────────────────────────────────┘
 """)
 
 # ══════════════════════════════════════════════════════════════════════
@@ -271,6 +283,8 @@ print_tensor_3d("x", x, [f"[batch 0]"])
 step_header("4", "Create Causal Mask")
 print(f"""
     The causal mask prevents tokens from attending to FUTURE tokens.
+    THIS IS THE ONLY THING that makes this model a DECODER (GPT).
+    Without the mask, it would be an ENCODER (BERT).
 
     For seq_len = {SEQ}:
       Token 0: can attend to [0]              — only itself
@@ -303,6 +317,9 @@ print(f"""
     but NOT tok3 (-inf) or tok4 (-inf).
 
     After softmax, -inf → 0.0, so no information leaks from the future.
+
+    If we removed this mask (passed attn_mask=None to each block),
+    this model would behave like an ENCODER — full bidirectional attention.
 """)
 
 # ══════════════════════════════════════════════════════════════════════

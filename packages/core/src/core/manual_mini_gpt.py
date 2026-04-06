@@ -272,6 +272,23 @@ class ManualMiniGPT(nn.Module):
         # ==============================================================
         # STEP 4 — Create causal mask
         # ==============================================================
+        # ┌──────────────────────────────────────────────────────────┐
+        # │  THIS IS THE ONLY DIFFERENCE BETWEEN ENCODER & DECODER  │
+        # │                                                         │
+        # │  DECODER_ONLY (GPT):  causal mask applied               │
+        # │    → each token sees only itself and past tokens        │
+        # │    → triangular mask with -inf above diagonal           │
+        # │    → enables autoregressive generation                  │
+        # │                                                         │
+        # │  ENCODER_ONLY (BERT): no mask (or set mask = None)      │
+        # │    → each token sees ALL other tokens (bidirectional)   │
+        # │    → full attention matrix                              │
+        # │    → used for classification, not generation            │
+        # │                                                         │
+        # │  The transformer block itself is IDENTICAL in both      │
+        # │  cases — only the mask changes.                         │
+        # └──────────────────────────────────────────────────────────┘
+        #
         # The causal mask prevents each token from "seeing" future tokens.
         # Without it, the model could cheat during training by looking
         # at the answer it's supposed to predict!
@@ -307,6 +324,8 @@ class ManualMiniGPT(nn.Module):
                 print(f"{'─'*60}")
                 print(f"Block {layer_idx} input:  {x.shape}")
 
+            # DECODER_ONLY: pass causal_mask → autoregressive attention
+            # ENCODER_ONLY: pass attn_mask=None → bidirectional attention
             x = block(x, attn_mask=causal_mask)
             # x: (batch_size, seq_len, d_model) — same shape, new values
             # Each block refines the representation through attention + FFN.
