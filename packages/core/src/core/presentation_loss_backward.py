@@ -8,7 +8,7 @@ is printed so you can see exactly what cross-entropy computes, how
 gradients flow backward, and how AdamW updates weights.
 
     batch_size  = 2    (two samples)
-    seq_len     = 3    (three tokens each)
+    seq_len     = 5    (five tokens each)
     d_model     = 6    (embedding width)
     num_heads   = 3    (attention heads)
     d_k         = 2    (per-head dim)
@@ -78,7 +78,7 @@ def step_header(num: str, title: str):
 # ══════════════════════════════════════════════════════════════════════
 
 BATCH       = 2
-SEQ         = 3
+SEQ         = 5
 D_MODEL     = 6
 HEADS       = 3
 D_K         = D_MODEL // HEADS   # = 2
@@ -88,18 +88,37 @@ NUM_CLASSES = 4
 torch.manual_seed(42)
 
 # ══════════════════════════════════════════════════════════════════════
+# Vocabulary & Class Labels
+# ══════════════════════════════════════════════════════════════════════
+
+VOCAB_WORDS = [
+    "<pad>", "the", "cat", "dog", "climbs", "sits", "a", "tree",
+    "house", "on", "big", "small", "runs", "eats", "fish", "bird",
+]
+
+VOCAB = len(VOCAB_WORDS)
+word2id = {w: i for i, w in enumerate(VOCAB_WORDS)}
+
+CLASS_NAMES = ["animal", "action", "food", "place"]
+SENTENCES = ["the cat climbs a tree", "the dog eats a fish"]
+SENT_LABELS = [f'"{s}"' for s in SENTENCES]
+
+# Targets: "big cat sits" → animal(0), "dog eats fish" → action(1)
+TARGET_IDS = [0, 1]
+
+# ══════════════════════════════════════════════════════════════════════
 # Architecture overview
 # ══════════════════════════════════════════════════════════════════════
 
 section("ARCHITECTURE — Forward → Loss → Backward → Optimizer")
 print(f"""
-    batch_size  = {BATCH}    (two samples)
-    seq_len     = {SEQ}    (three tokens each)
+    batch_size  = {BATCH}    (\"{SENTENCES[0]}\", \"{SENTENCES[1]}\")
+    seq_len     = {SEQ}    (five words each)
     d_model     = {D_MODEL}    (embedding dimension)
     num_heads   = {HEADS}    (attention heads)
     d_k         = {D_K}    (per-head dim)
     d_ff        = {D_FF}   (FFN hidden size)
-    num_classes = {NUM_CLASSES}    (classification categories)
+    num_classes = {NUM_CLASSES}    ({', '.join(CLASS_NAMES)})
 
     Full pipeline:
 
@@ -181,20 +200,30 @@ print(f"""
 
 section("INPUT & TARGETS")
 
-X = torch.randn(BATCH, SEQ, D_MODEL, requires_grad=True)
-X_data = (X.data * 3).round() / 3
+import torch.nn as _nn_emb
+token_embedding = _nn_emb.Embedding(VOCAB, D_MODEL)
+input_ids = torch.tensor([[word2id[w] for w in s.split()] for s in SENTENCES])
+X_data = token_embedding(input_ids).detach()
 X = X_data.clone().requires_grad_(True)
 
-targets = torch.tensor([2, 0])  # sample 0 → class 2, sample 1 → class 0
+targets = torch.tensor(TARGET_IDS)
 
 print(f"""
-    X.shape = ({BATCH}, {SEQ}, {D_MODEL})  — input embeddings
+    Sentences (classified into {NUM_CLASSES} categories: {', '.join(CLASS_NAMES)}):
+""")
+for si, sent in enumerate(SENTENCES):
+    cls_name = CLASS_NAMES[targets[si].item()]
+    words = sent.split()
+    ids = [word2id[w] for w in words]
+    mapping = ", ".join(f'"{w}"={word2id[w]}' for w in words)
+    print(f'      "{sent}"  →  {ids}  ({mapping})  →  class "{cls_name}"')
+print(f"""
+    X.shape = ({BATCH}, {SEQ}, {D_MODEL})  — word embeddings
     X.requires_grad = True  (so we can see ∂loss/∂X later)
 
-    targets = {targets.tolist()}
-    Meaning: sample 0 should be class {targets[0].item()}, sample 1 should be class {targets[1].item()}
+    targets = {targets.tolist()}  →  [\"{CLASS_NAMES[targets[0]]}\", \"{CLASS_NAMES[targets[1]]}\"]
 """)
-print_tensor_3d("X", X.data, [f"[sample {i}]" for i in range(BATCH)])
+print_tensor_3d("X", X.data, [f'["{s}"]' for s in SENTENCES])
 
 # ║═══════════════════════════════════════════════════════════════════║
 # ║ PHASE 1: FORWARD PASS                                           ║
@@ -218,7 +247,7 @@ with contextlib.redirect_stdout(io.StringIO()):
 
 print(f"    encoder_output.shape = {tuple(encoder_output.shape)}")
 print()
-print_tensor_3d("enc_out", encoder_output.data, [f"[sample {i}]" for i in range(BATCH)])
+print_tensor_3d("enc_out", encoder_output.data, [f'["{s}"]' for s in SENTENCES])
 
 # ══════════════════════════════════════════════════════════════════════
 # STEP 2 — Classification Head: CLS pooling + linear
@@ -259,13 +288,12 @@ print()
 print_matrix("logits", logits.data)
 
 print(f"""
-    Each row has {NUM_CLASSES} scores — one per class.
+    Each row has {NUM_CLASSES} scores — one per class ({', '.join(CLASS_NAMES)}).
     These are RAW scores (not probabilities yet).
     Higher score = model thinks this class is more likely.
 
-    targets = {targets.tolist()}
-    Sample 0: target=class {targets[0].item()}, logit for class {targets[0].item()} = {logits[0, targets[0]].item():+.4f}
-    Sample 1: target=class {targets[1].item()}, logit for class {targets[1].item()} = {logits[1, targets[1]].item():+.4f}
+    \"{SENTENCES[0]}\" → target=\"{CLASS_NAMES[targets[0]]}\"  logit={logits[0, targets[0]].item():+.4f}
+    \"{SENTENCES[1]}\" → target=\"{CLASS_NAMES[targets[1]]}\"  logit={logits[1, targets[1]].item():+.4f}
 """)
 
 # ║═══════════════════════════════════════════════════════════════════║
@@ -295,7 +323,7 @@ shifted = logits - max_logits
 
 print(f"    max per sample:")
 for i in range(BATCH):
-    print(f"      sample {i}: max = {max_logits[i, 0].item():+.4f}")
+    print(f"      \"{SENTENCES[i]}\": max = {max_logits[i, 0].item():+.4f}")
 print()
 print_matrix("shifted_logits", shifted.data)
 print(f"\n    Note: the largest value in each row is now 0.00")
@@ -325,7 +353,7 @@ Z = exp_shifted.sum(dim=-1, keepdim=True)
 print(f"    Z per sample:")
 for i in range(BATCH):
     exp_vals = ", ".join(f"{exp_shifted[i, c].item():.4f}" for c in range(NUM_CLASSES))
-    print(f"      sample {i}: Z = {exp_vals} = {Z[i, 0].item():.4f}")
+    print(f"      \"{SENTENCES[i]}\": Z = {exp_vals} = {Z[i, 0].item():.4f}")
 
 # ── Step D: log-softmax ─────────────────────────────────────────────
 
@@ -343,7 +371,7 @@ log_softmax_vals = shifted - log_Z
 
 print(f"    log(Z) per sample:")
 for i in range(BATCH):
-    print(f"      sample {i}: log({Z[i, 0].item():.4f}) = {log_Z[i, 0].item():+.4f}")
+    print(f"      \"{SENTENCES[i]}\": log({Z[i, 0].item():.4f}) = {log_Z[i, 0].item():+.4f}")
 print()
 print_matrix("log_softmax", log_softmax_vals.data)
 
@@ -352,7 +380,7 @@ probs = torch.exp(log_softmax_vals)
 print(f"\n    Verification: exp(log_softmax) = probabilities (should sum to 1.0)")
 print_matrix("probabilities", probs.data)
 for i in range(BATCH):
-    print(f"      sample {i} sum = {probs[i].sum().item():.6f} ✓")
+    print(f"      \"{SENTENCES[i]}\" sum = {probs[i].sum().item():.6f} ✓")
 
 # ── Step E: NLL — pick the correct class ─────────────────────────────
 
@@ -367,12 +395,13 @@ print(f"""
 
 for i in range(BATCH):
     target_class = targets[i].item()
+    cls_name = CLASS_NAMES[target_class]
     log_prob = log_softmax_vals[i, target_class].item()
     prob = probs[i, target_class].item()
     nll = -log_prob
-    print(f"    Sample {i}: target = class {target_class}")
-    print(f"      log P(class {target_class}) = {log_prob:+.4f}")
-    print(f"      P(class {target_class})     = {prob:.4f}  ({prob*100:.1f}%)")
+    print(f"    \"{SENTENCES[i]}\" → target = \"{cls_name}\" (class {target_class})")
+    print(f"      log P(\"{cls_name}\") = {log_prob:+.4f}")
+    print(f"      P(\"{cls_name}\")     = {prob:.4f}  ({prob*100:.1f}%)")
     print(f"      NLL = −({log_prob:+.4f}) = {nll:+.4f}")
     print()
 
@@ -503,7 +532,7 @@ print(f"\n    ── Gradient of INPUT X  ──")
 print(f"    ∂loss/∂X tells us how each input value should change")
 print(f"    to reduce the loss.  Shape: {tuple(X.grad.shape)}")
 print()
-print_tensor_3d("∂L/∂X", X.grad.data, [f"[sample {i}]" for i in range(BATCH)])
+print_tensor_3d("∂L/∂X", X.grad.data, [f'["{s}"]' for s in SENTENCES])
 
 # ── Per-layer gradient norms ─────────────────────────────────────────
 print(f"\n    ── Gradient norms per layer (L2 norm) ──")
@@ -737,22 +766,28 @@ for step in range(num_steps):
 
     if step % 2 == 0 or step == num_steps - 1:
         probs_step = torch.softmax(step_logits.detach(), dim=-1)
-        conf = ", ".join(f"P(class {targets[i].item()})={probs_step[i, targets[i]].item():.3f}"
+        conf = ", ".join(f'P("{CLASS_NAMES[targets[i].item()]}")={probs_step[i, targets[i]].item():.3f}'
                          for i in range(BATCH))
+        preds_str = ", ".join(f'"{CLASS_NAMES[p]}"' for p in preds.tolist())
         print(f"    Step {step+1:>2}/{num_steps}  "
               f"loss={step_loss.item():.4f}  "
               f"accuracy={accuracy:.0%}  "
-              f"preds={preds.tolist()}  {conf}")
+              f"preds=[{preds_str}]  {conf}")
 
+targets_str = ", ".join(f'"{CLASS_NAMES[t]}"' for t in targets.tolist())
+preds_str = ", ".join(f'"{CLASS_NAMES[p]}"' for p in preds.tolist())
 print(f"""
     ── Training summary ──
     Initial loss: {initial_loss:.4f}  (random baseline: {random_loss:.4f})
     Final loss:   {step_loss.item():.4f}
-    Final accuracy: {accuracy:.0%}  predictions={preds.tolist()}  targets={targets.tolist()}
+    Final accuracy: {accuracy:.0%}
+    Predictions: [{preds_str}]
+    Targets:     [{targets_str}]
 """)
 
 if accuracy == 1.0:
-    print(f"    ✓ 100% accuracy! The model memorised both samples.")
+    print(f'    ✓ 100% accuracy! "{SENTENCES[0]}" → "{CLASS_NAMES[targets[0]]}",')
+    print(f'                      "{SENTENCES[1]}" → "{CLASS_NAMES[targets[1]]}"')
 elif accuracy > 0:
     print(f"    ✓ Learning is happening — accuracy improved.")
 else:

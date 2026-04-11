@@ -5,8 +5,8 @@ ASCII Art Presentation: Transformer Encoder Block — Step by Step
 Runs a REAL forward pass through ManualTransformerEncoderBlock
 with tiny tensors so every value fits on screen.
 
-    batch_size = 2    (two "sentences")
-    seq_len    = 3    (three tokens each)
+    batch_size = 2    (two sentences)
+    seq_len    = 5    (five tokens each)
     d_model    = 6    (embedding width)
     num_heads  = 3    (attention heads)
     d_k        = 2    (per-head dimension = 6 / 3)
@@ -49,12 +49,13 @@ def print_tensor_3d(name: str, t: torch.Tensor, dim_labels=None):
         print_matrix(f"{name}{labels[i]}", t[i])
 
 
-def print_tensor_4d(name: str, t: torch.Tensor):
+def print_tensor_4d(name: str, t: torch.Tensor, batch_labels=None):
     """Print a 4D tensor: (batch, heads, rows, cols)."""
     b, h, r, c = t.shape
     for bi in range(b):
+        bl = batch_labels[bi] if batch_labels else f"batch={bi}"
         for hi in range(h):
-            print_matrix(f"{name}[batch={bi}, head={hi}]", t[bi, hi])
+            print_matrix(f"{name}[{bl}, head={hi}]", t[bi, hi])
 
 
 def section(title: str):
@@ -72,7 +73,7 @@ def step_header(num: str, title: str):
 # ══════════════════════════════════════════════════════════════════════
 
 BATCH   = 2
-SEQ     = 3
+SEQ     = 5
 D_MODEL = 6
 HEADS   = 3
 D_K     = D_MODEL // HEADS   # = 2
@@ -81,13 +82,29 @@ D_FF    = 12
 torch.manual_seed(42)
 
 # ══════════════════════════════════════════════════════════════════════
+# Vocabulary — 16 real English words (same as presentation_mini_gpt)
+# ══════════════════════════════════════════════════════════════════════
+
+VOCAB_WORDS = [
+    "<pad>", "the", "cat", "dog", "climbs", "sits", "a", "tree",
+    "house", "on", "big", "small", "runs", "eats", "fish", "bird",
+]
+
+VOCAB = len(VOCAB_WORDS)
+word2id = {w: i for i, w in enumerate(VOCAB_WORDS)}
+
+SENTENCES = ["the cat climbs a tree", "the dog eats a fish"]
+SENT_LABELS = [f'["{s}"]' for s in SENTENCES]
+WORD_LABELS = [[w for w in s.split()] for s in SENTENCES]
+
+# ══════════════════════════════════════════════════════════════════════
 # Build the block (with real weights)
 # ══════════════════════════════════════════════════════════════════════
 
 section("ARCHITECTURE")
 print(f"""
-    batch_size  = {BATCH}   (two sentences)
-    seq_len     = {SEQ}   (three tokens per sentence)
+    batch_size  = {BATCH}   ("{SENTENCES[0]}", "{SENTENCES[1]}")
+    seq_len     = {SEQ}   (five words per sentence)
     d_model     = {D_MODEL}   (embedding dimension)
     num_heads   = {HEADS}   (parallel attention heads)
     d_k         = {D_K}   (per-head dim = d_model / num_heads)
@@ -95,31 +112,31 @@ print(f"""
 
     Architecture (Pre-LN):
 
-        Input X ──────────────────────────────── shape: (2, 3, 6)
+        Input X ──────────────────────────────── shape: (2, 5, 6)
           │
-          ├──► LayerNorm ──► W_Q ──► Q          shape: (2, 3, 6)
-          │                  W_K ──► K          reshape → (2, 3, 6)
-          │                  W_V ──► V                    (2, 3, 6)
+          ├──► LayerNorm ──► W_Q ──► Q          shape: (2, 5, 6)
+          │                  W_K ──► K          reshape → (2, 5, 6)
+          │                  W_V ──► V                    (2, 5, 6)
           │                    │
           │         ┌──────── Split into {HEADS} heads ────────┐
-          │         │  Q,K,V: (2, {HEADS}, 3, {D_K})              │
+          │         │  Q,K,V: (2, {HEADS}, 5, {D_K})              │
           │         │                                         │
           │         │  scores = Q @ K^T / √{D_K}               │
           │         │  weights = softmax(scores)              │
           │         │  head_out = weights @ V                 │
           │         └──── Concatenate heads ──────────────────┘
           │                    │
-          │                  W_O ──► attention_output  (2, 3, 6)
+          │                  W_O ──► attention_output  (2, 5, 6)
           │                    │
           ╰──── + ◄────────────╯   ← residual connection
                │
-               x1  (2, 3, 6)
+               x1  (2, 5, 6)
                │
                ├──► LayerNorm ──► FFN_linear1 ──► GELU ──► FFN_linear2
                │                                              │
                ╰──── + ◄──────────────────────────────────────╯
                      │
-                   output  (2, 3, 6)
+                   output  (2, 5, 6)
 """)
 
 # Create the block
@@ -138,16 +155,21 @@ real_block = ManualTransformerEncoderBlock(
 # Input tensor X
 # ══════════════════════════════════════════════════════════════════════
 
-section("INPUT X — Token embeddings (2 sentences × 3 tokens × 6 dims)")
+section("INPUT X — Word Embeddings for Two Real Sentences")
 
-X = torch.randn(BATCH, SEQ, D_MODEL)
-# Round for readability
-X = (X * 3).round() / 3
+token_embedding = nn.Embedding(VOCAB, D_MODEL)
+input_ids = torch.tensor([[word2id[w] for w in s.split()] for s in SENTENCES])
+X = token_embedding(input_ids).detach()
 
+print(f"\n    Sentences:")
+for si, sent in enumerate(SENTENCES):
+    words = sent.split()
+    ids = [word2id[w] for w in words]
+    mapping = ", ".join(f'"{w}"={word2id[w]}' for w in words)
+    print(f'      {si}: "{sent}"  →  {ids}  ({mapping})')
 print(f"\n    X.shape = ({BATCH}, {SEQ}, {D_MODEL})")
-print(f"    Meaning: {BATCH} sentences, each with {SEQ} tokens,")
-print(f"             each token is a {D_MODEL}-dimensional vector\n")
-print_tensor_3d("X", X, dim_labels=[f"[sentence {i}]" for i in range(BATCH)])
+print(f"    Each word ID → row in embedding table → {D_MODEL}-dim vector\n")
+print_tensor_3d("X", X, dim_labels=SENT_LABELS)
 
 # ══════════════════════════════════════════════════════════════════════
 # STEP 1 — LayerNorm
@@ -172,12 +194,12 @@ print()
 tok = X[0, 0]
 mean_val = tok.mean().item()
 std_val = tok.std(unbiased=False).item()
-print(f"    Example: X[sentence=0, token=0] = [{', '.join(fmt(v.item(), 5) for v in tok)}]")
+print(f"    Example: X[\"{SENTENCES[0]}\", word \"{WORD_LABELS[0][0]}\"] = [{', '.join(fmt(v.item(), 5) for v in tok)}]")
 print(f"    mean = {mean_val:+.3f},  std = {std_val:.3f}")
 normed = (tok - mean_val) / (std_val + 1e-5)
 print(f"    (x - mean) / std           = [{', '.join(fmt(v.item(), 5) for v in normed)}]")
 print()
-print_tensor_3d("x_norm1", x_norm1, [f"[sentence {i}]" for i in range(BATCH)])
+print_tensor_3d("x_norm1", x_norm1, SENT_LABELS)
 
 # ══════════════════════════════════════════════════════════════════════
 # STEP 2 — Linear projections Q, K, V
@@ -204,11 +226,11 @@ print(f"    W_Q.weight.shape = {tuple(real_block.W_Q.weight.shape)}  (transposed
 print()
 
 print("    ── Q (Queries) ──")
-print_tensor_3d("Q", Q, [f"[sentence {i}]" for i in range(BATCH)])
+print_tensor_3d("Q", Q, SENT_LABELS)
 print("    ── K (Keys) ──")
-print_tensor_3d("K", K, [f"[sentence {i}]" for i in range(BATCH)])
+print_tensor_3d("K", K, SENT_LABELS)
 print("    ── V (Values) ──")
-print_tensor_3d("V", V, [f"[sentence {i}]" for i in range(BATCH)])
+print_tensor_3d("V", V, SENT_LABELS)
 
 # ══════════════════════════════════════════════════════════════════════
 # STEP 3 — Reshape into multiple heads
@@ -225,6 +247,8 @@ print(f"""
       token 0: [a b | c d | e f]  →  head 0: [a b]   head 1: [c d]   head 2: [e f]
       token 1: [g h | i j | k l]  →  head 0: [g h]   head 1: [i j]   head 2: [k l]
       token 2: [m n | o p | q r]  →  head 0: [m n]   head 1: [o p]   head 2: [q r]
+      token 3: [s t | u v | w x]  →  head 0: [s t]   head 1: [u v]   head 2: [w x]
+      token 4: [y z | A B | C D]  →  head 0: [y z]   head 1: [A B]   head 2: [C D]
 """)
 
 Q_heads = Q.view(BATCH, SEQ, HEADS, D_K).transpose(1, 2)
@@ -234,11 +258,11 @@ V_heads = V.view(BATCH, SEQ, HEADS, D_K).transpose(1, 2)
 print(f"    Q_heads.shape = {tuple(Q_heads.shape)}  →  (batch, heads, seq, d_k)")
 print()
 print("    ── Q per head ──")
-print_tensor_4d("Q", Q_heads)
+print_tensor_4d("Q", Q_heads, SENT_LABELS)
 print("    ── K per head ──")
-print_tensor_4d("K", K_heads)
+print_tensor_4d("K", K_heads, SENT_LABELS)
 print("    ── V per head ──")
-print_tensor_4d("V", V_heads)
+print_tensor_4d("V", V_heads, SENT_LABELS)
 
 # ══════════════════════════════════════════════════════════════════════
 # STEP 4 — Attention scores: Q @ K^T
@@ -249,7 +273,10 @@ print(f"""
     For each (batch, head):
       scores = Q @ K^T    →  ({SEQ}, {D_K}) @ ({D_K}, {SEQ})  =  ({SEQ}, {SEQ})
 
-    scores[i][j] = "how much should token i attend to token j?"
+    scores[i][j] = "how much should word i attend to word j?"
+
+    For \"{SENTENCES[0]}\":
+      scores[0][1] = how much does \"{WORD_LABELS[0][0]}\" attend to \"{WORD_LABELS[0][1]}\"?
 """)
 
 K_T = K_heads.transpose(-2, -1)
@@ -257,7 +284,7 @@ scores = torch.matmul(Q_heads, K_T)
 
 print(f"    scores.shape = {tuple(scores.shape)}")
 print()
-print_tensor_4d("scores", scores)
+print_tensor_4d("scores", scores, SENT_LABELS)
 
 # ══════════════════════════════════════════════════════════════════════
 # STEP 5 — Scale
@@ -275,7 +302,7 @@ print(f"""
 scale = math.sqrt(D_K)
 scaled = scores / scale
 
-print_tensor_4d("scaled", scaled)
+print_tensor_4d("scaled", scaled, SENT_LABELS)
 
 # ══════════════════════════════════════════════════════════════════════
 # STEP 6 — Softmax → attention weights
@@ -286,19 +313,19 @@ print(f"""
     weights = softmax(scaled, dim=-1)
 
     Each ROW sums to 1.0 — it's a probability distribution:
-    "how much should this query-token attend to each key-token?"
+    "how much should this word attend to each other word?"
 """)
 
 weights = torch.softmax(scaled, dim=-1)
 
-print_tensor_4d("weights", weights)
+print_tensor_4d("weights", weights, SENT_LABELS)
 
 # Verify rows sum to 1
 print("    ── Row sums (should all be 1.00) ──")
 for bi in range(BATCH):
     for hi in range(HEADS):
         sums = [f"{weights[bi, hi, r].sum().item():.2f}" for r in range(SEQ)]
-        print(f"      [batch={bi}, head={hi}]: {sums}")
+        print(f"      [\"{SENTENCES[bi]}\", head={hi}]: {sums}")
 
 # ══════════════════════════════════════════════════════════════════════
 # STEP 7 — Weighted sum: weights @ V
@@ -316,18 +343,21 @@ head_out = torch.matmul(weights, V_heads)
 
 print(f"    head_out.shape = {tuple(head_out.shape)}")
 print()
-print_tensor_4d("head_out", head_out)
+print_tensor_4d("head_out", head_out, SENT_LABELS)
 
 # Show one detailed calculation
-print("    ── Detailed: batch=0, head=0, output token 0 ──")
+w0 = WORD_LABELS[0]
+print(f'    ── Detailed: "{SENTENCES[0]}", head=0, word "{w0[0]}" ──')
 print(f"    V vectors:")
 for t in range(SEQ):
     v = V_heads[0, 0, t]
-    print(f"      token {t}: [{fmt(v[0].item(), 5)}, {fmt(v[1].item(), 5)}]")
+    print(f"      \"{w0[t]}\": [{fmt(v[0].item(), 5)}, {fmt(v[1].item(), 5)}]")
 w = weights[0, 0, 0]
-print(f"    weights for token 0: [{', '.join(fmt(w[t].item(), 5) for t in range(SEQ))}]")
+wts_str = ", ".join(fmt(w[t].item(), 5) for t in range(SEQ))
+print(f'    attention weights for "{w0[0]}": [{wts_str}]')
 result = head_out[0, 0, 0]
-print(f"    output = {fmt(w[0].item(),5)} × V[0] + {fmt(w[1].item(),5)} × V[1] + {fmt(w[2].item(),5)} × V[2]")
+terms = " + ".join(f'{fmt(w[t].item(),5)} × V["{w0[t]}"]' for t in range(SEQ))
+print(f'    output = {terms}')
 print(f"           = [{fmt(result[0].item(), 5)}, {fmt(result[1].item(), 5)}]")
 
 # ══════════════════════════════════════════════════════════════════════
@@ -345,7 +375,7 @@ concatenated = head_out.transpose(1, 2).contiguous().view(BATCH, SEQ, D_MODEL)
 
 print(f"    concatenated.shape = {tuple(concatenated.shape)}")
 print()
-print_tensor_3d("concat", concatenated, [f"[sentence {i}]" for i in range(BATCH)])
+print_tensor_3d("concat", concatenated, SENT_LABELS)
 
 # ══════════════════════════════════════════════════════════════════════
 # STEP 9 — Output projection W_O
@@ -363,7 +393,7 @@ attn_output = real_block.W_O(concatenated)
 
 print(f"    attn_output.shape = {tuple(attn_output.shape)}")
 print()
-print_tensor_3d("attn_out", attn_output, [f"[sentence {i}]" for i in range(BATCH)])
+print_tensor_3d("attn_out", attn_output, SENT_LABELS)
 
 # ══════════════════════════════════════════════════════════════════════
 # STEP 10 — Residual connection #1
@@ -382,7 +412,7 @@ print(f"""
 
 x1 = X + attn_output
 
-print_tensor_3d("x1 = X + attn", x1, [f"[sentence {i}]" for i in range(BATCH)])
+print_tensor_3d("x1 = X + attn", x1, SENT_LABELS)
 
 # ══════════════════════════════════════════════════════════════════════
 # STEP 11 — LayerNorm #2
@@ -392,7 +422,7 @@ step_header("11", "LayerNorm #2 (before FFN)")
 
 x1_norm = real_block.layer_norm_2(x1)
 print()
-print_tensor_3d("x1_norm", x1_norm, [f"[sentence {i}]" for i in range(BATCH)])
+print_tensor_3d("x1_norm", x1_norm, SENT_LABELS)
 
 # ══════════════════════════════════════════════════════════════════════
 # STEP 12 — Feed-Forward Network
@@ -409,14 +439,14 @@ print(f"""
 
 ffn_hidden = real_block.ffn_linear1(x1_norm)
 print(f"    After Linear1:  shape = {tuple(ffn_hidden.shape)}")
-print_tensor_3d("ffn_hid", ffn_hidden, [f"[sentence {i}]" for i in range(BATCH)])
+print_tensor_3d("ffn_hid", ffn_hidden, SENT_LABELS)
 
 ffn_activated = real_block.ffn_gelu(ffn_hidden)
 print(f"\n    After GELU:  shape = {tuple(ffn_activated.shape)}  (same shape, values clipped)")
 
 ffn_output = real_block.ffn_linear2(ffn_activated)
 print(f"\n    After Linear2:  shape = {tuple(ffn_output.shape)}  (back to d_model={D_MODEL})")
-print_tensor_3d("ffn_out", ffn_output, [f"[sentence {i}]" for i in range(BATCH)])
+print_tensor_3d("ffn_out", ffn_output, SENT_LABELS)
 
 # ══════════════════════════════════════════════════════════════════════
 # STEP 13 — Residual connection #2
@@ -431,7 +461,7 @@ print(f"""
 
 output = x1 + ffn_output
 
-print_tensor_3d("output", output, [f"[sentence {i}]" for i in range(BATCH)])
+print_tensor_3d("output", output, SENT_LABELS)
 
 # ══════════════════════════════════════════════════════════════════════
 # SUMMARY
@@ -439,8 +469,8 @@ print_tensor_3d("output", output, [f"[sentence {i}]" for i in range(BATCH)])
 
 section("SUMMARY")
 print(f"""
-    Input:   X  ({BATCH}, {SEQ}, {D_MODEL})   ← {BATCH} sentences × {SEQ} tokens × {D_MODEL} dims
-    Output:  Y  ({BATCH}, {SEQ}, {D_MODEL})   ← same shape, new values
+    Input:   X  ({BATCH}, {SEQ}, {D_MODEL})   ← "{SENTENCES[0]}", "{SENTENCES[1]}"
+    Output:  Y  ({BATCH}, {SEQ}, {D_MODEL})   ← same shape, refined values
 
     What happened inside:
 

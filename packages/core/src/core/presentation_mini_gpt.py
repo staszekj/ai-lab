@@ -91,12 +91,49 @@ SEQ         = 5
 torch.manual_seed(42)
 
 # ══════════════════════════════════════════════════════════════════════
+# Vocabulary — 16 real English words
+# ══════════════════════════════════════════════════════════════════════
+
+VOCAB_WORDS = [
+    "<pad>",    # 0
+    "the",      # 1
+    "cat",      # 2
+    "dog",      # 3
+    "climbs",   # 4
+    "sits",     # 5
+    "a",        # 6
+    "tree",     # 7
+    "house",    # 8
+    "on",       # 9
+    "big",      # 10
+    "small",    # 11
+    "runs",     # 12
+    "eats",     # 13
+    "fish",     # 14
+    "bird",     # 15
+]
+
+id2word = VOCAB_WORDS               # id2word[i] → word
+word2id = {w: i for i, w in enumerate(VOCAB_WORDS)}
+
+SENTENCE = "the cat climbs a tree"  # our training sentence
+
+
+def ids_to_words(ids):
+    return [id2word[i] for i in ids]
+
+
+def words_to_str(ids):
+    return " ".join(ids_to_words(ids))
+
+
+# ══════════════════════════════════════════════════════════════════════
 # Architecture overview
 # ══════════════════════════════════════════════════════════════════════
 
 section("ARCHITECTURE — Mini-GPT (Decoder-Only Transformer)")
 print(f"""
-    vocab_size     = {VOCAB}   (tiny vocabulary for demo)
+    vocab_size     = {VOCAB}   (16 real English words)
     max_seq_len    = {MAX_SEQ}    (maximum sequence length)
     d_model        = {D_MODEL}    (embedding dimension)
     num_heads      = {HEADS}    (parallel attention heads)
@@ -108,7 +145,7 @@ print(f"""
 
     Architecture:
 
-        input_ids  (1, 5)         ← integer token IDs
+        input_ids  (1, 5)         ← "the cat climbs a tree"
           │
           ├──► Token Embedding     ── lookup ──► (1, 5, 6)
           │
@@ -138,6 +175,12 @@ print(f"""
                │
                ▼
           logits → softmax → next token prediction
+
+    GENERATION (autoregressive — word by word):
+        "the cat"           → predicts → "climbs"
+        "the cat climbs"    → predicts → "a"
+        "the cat climbs a"  → predicts → "tree"
+        Result: "the cat climbs a tree" ✓
 
     KEY DIFFERENCE from encoder (BERT):
         GPT uses a CAUSAL MASK — each token can only attend
@@ -192,18 +235,25 @@ print(f"""
 # Input: token IDs
 # ══════════════════════════════════════════════════════════════════════
 
-section("INPUT — Token IDs")
+section("INPUT — A Real Sentence")
 
-input_ids = torch.tensor([[3, 7, 1, 12, 5]])  # (1, 5)
+input_ids = torch.tensor([[word2id[w] for w in SENTENCE.split()]])  # (1, 5)
 
 print(f"""
-    input_ids.shape = ({BATCH}, {SEQ})
-    input_ids = {input_ids[0].tolist()}
+    Sentence:  \"{SENTENCE}\"
 
-    Each integer is a token ID from our vocabulary of {VOCAB} tokens.
-    In a real model, these come from a tokenizer (e.g. BPE).
-    Here we just pick some small integers for the demo.
-""")
+    Tokenization (each word → integer ID):""")
+for w in SENTENCE.split():
+    print(f"      \"{w}\"  →  {word2id[w]}")
+print(f"""
+    input_ids = {input_ids[0].tolist()}
+    input_ids.shape = ({BATCH}, {SEQ})
+
+    Our mini-vocabulary ({VOCAB} words):""")
+for i, w in enumerate(VOCAB_WORDS):
+    marker = " ◄" if i in input_ids[0].tolist() else ""
+    print(f"      {i:>2}: {w:<10}{marker}")
+print()
 
 # ══════════════════════════════════════════════════════════════════════
 # STEP 1 — Token Embedding
@@ -213,13 +263,12 @@ step_header("1", "Token Embedding lookup")
 print(f"""
     token_emb = Embedding(input_ids)
 
-    Each token ID is used to look up a row in the embedding table.
-    The table has {VOCAB} rows (one per vocab token), each of length {D_MODEL}.
-
-    Token ID 3  →  row 3 of embedding table  →  [{D_MODEL}-dim vector]
-    Token ID 7  →  row 7 of embedding table  →  [{D_MODEL}-dim vector]
-    ...
-
+    Each word's ID is used to look up a row in the embedding table.
+    The table has {VOCAB} rows (one per word), each of length {D_MODEL}.""")
+for w in SENTENCE.split():
+    wid = word2id[w]
+    print(f"    \"{w}\" (ID {wid})  →  row {wid}  →  [{D_MODEL}-dim vector]")
+print(f"""
     Shape: ({BATCH}, {SEQ}) → ({BATCH}, {SEQ}, {D_MODEL})
 """)
 
@@ -229,7 +278,7 @@ token_emb = model.token_embedding(input_ids)
 print(f"    Embedding table sample (first 5 rows of {VOCAB}):")
 print_matrix("embed_table[:5]", model.token_embedding.weight.data[:5])
 print()
-print(f"    Token embeddings for input [{', '.join(str(x) for x in input_ids[0].tolist())}]:")
+print(f"    Token embeddings for \"{SENTENCE}\":")
 print_tensor_3d("token_emb", token_emb, [f"[batch 0]"])
 
 # ══════════════════════════════════════════════════════════════════════
@@ -488,41 +537,39 @@ print(f"""
 
 probs = torch.softmax(logits, dim=-1)
 
-# Show the last position's probabilities (the actual next-token prediction)
-print(f"    ── Probabilities at the LAST position (token {SEQ-1}) ──")
-print(f"    This predicts what token comes NEXT (position {SEQ}):")
-print()
+# Show the last position's probabilities (next-word prediction)
 last_probs = probs[0, -1]  # (16,)
-print(f"    Token ID:   ", end="")
-for v in range(VOCAB):
-    print(f"  {v:>5}", end="")
-print()
-print(f"    Probability:", end="")
-for v in range(VOCAB):
-    print(f"  {last_probs[v].item():5.3f}", end="")
-print()
+last_word = SENTENCE.split()[-1]
+print(f"    ── After \"{last_word}\", what word comes next? ──")
+print(f"    The model assigns a probability to EACH of the {VOCAB} words:\n")
+
+ranked = last_probs.argsort(descending=True)
+for rank, v in enumerate(ranked.tolist()):
+    bar = "█" * int(last_probs[v].item() * 40)
+    marker = " ◄ predicted" if rank == 0 else ""
+    print(f"      {rank+1:>2}. {id2word[v]:<10} {last_probs[v].item():.4f}  {bar}{marker}")
 
 predicted = last_probs.argmax().item()
-print(f"\n    Predicted next token: {predicted}  (prob={last_probs[predicted].item():.3f})")
-print(f"    (Untrained model — these are essentially random!)")
+print(f"\n    Predicted next word: \"{id2word[predicted]}\"")
+print(f"    (Untrained model — essentially random!)")
 
 # ══════════════════════════════════════════════════════════════════════
 # STEP 9 — Language Model Loss (next-token prediction)
 # ══════════════════════════════════════════════════════════════════════
 
 step_header("9", "Language model loss")
+sent_words = SENTENCE.split()
 print(f"""
-    The training target: predict the NEXT token at every position.
+    The training target: predict the NEXT word at every position.
 
-    Input:    [{', '.join(str(x) for x in input_ids[0].tolist())}]
-    Targets:       [{', '.join(str(x) for x in input_ids[0, 1:].tolist())}]
+    Sentence: \"{SENTENCE}\"
 
-    Position 0 predicts token at position 1  (target: {input_ids[0, 1].item()})
-    Position 1 predicts token at position 2  (target: {input_ids[0, 2].item()})
-    Position 2 predicts token at position 3  (target: {input_ids[0, 3].item()})
-    Position 3 predicts token at position 4  (target: {input_ids[0, 4].item()})
+    \"{sent_words[0]}\" → predict → \"{sent_words[1]}\"
+    \"{sent_words[1]}\" → predict → \"{sent_words[2]}\"
+    \"{sent_words[2]}\" → predict → \"{sent_words[3]}\"
+    \"{sent_words[3]}\" → predict → \"{sent_words[4]}\"
 
-    Loss = cross-entropy = -mean(log P(correct_next_token))
+    Loss = cross-entropy = -mean(log P(correct_next_word))
 """)
 
 # Shift logits and targets
@@ -539,9 +586,9 @@ for t in range(SEQ - 1):
     target_id = shift_targets[0, t].item()
     target_prob = pos_probs[target_id].item()
     pred_id = pos_probs.argmax().item()
-    print(f"    Position {t} → target={target_id:>2}  "
-          f"P(target)={target_prob:.4f}  "
-          f"predicted={pred_id:>2}  "
+    print(f"    \"{sent_words[t]}\" → target=\"{id2word[target_id]}\"  "
+          f"P={target_prob:.4f}  "
+          f"predicted=\"{id2word[pred_id]}\"  "
           f"{'✓' if pred_id == target_id else '✗'}")
 
 loss = nn.CrossEntropyLoss()(
@@ -599,11 +646,12 @@ print(f"""
 # STEP 11 — Training: memorise a tiny sequence
 # ══════════════════════════════════════════════════════════════════════
 
-step_header("11", "Training loop — memorise the sequence")
+step_header("11", "Training loop — memorise the sentence")
 print(f"""
-    We'll train this tiny model to memorise our input sequence.
-    After training, given the first few tokens as a prompt,
-    it should predict the rest.
+    We'll train this tiny model to memorise: \"{SENTENCE}\"
+
+    After training, given \"{' '.join(SENTENCE.split()[:2])}\" as a prompt,
+    it should GENERATE the rest: \"{' '.join(SENTENCE.split()[2:])}\".
 
     Optimizer: AdamW (lr=0.005)
     Steps: 100
@@ -659,33 +707,39 @@ print(f"""
 # STEP 12 — Autoregressive Generation
 # ══════════════════════════════════════════════════════════════════════
 
-step_header("12", "Autoregressive Generation")
+step_header("12", "GENERATION — The Model Writes Text")
+prompt_w = SENTENCE.split()[:2]
+expect_w = SENTENCE.split()[2:]
 print(f"""
-    This is how GPT generates text: one token at a time.
+    THIS IS THE CORE IDEA OF GPT — generating text word by word.
+
+    ┌────────────────────────────────────────────────────────────────┐
+    │  Given a prompt, the model GENERATES new text by predicting  │
+    │  one word at a time, then feeding it back as input.          │
+    └────────────────────────────────────────────────────────────────┘
 
     Algorithm:
-      1. Start with a prompt (e.g. first 2 tokens)
-      2. Run forward pass → get logits at the LAST position
-      3. Sample (or argmax) the next token
-      4. Append it and repeat from step 2
+      1. Start with prompt: \"{' '.join(prompt_w)}\"
+      2. Forward pass → probabilities for ALL {VOCAB} words
+      3. Pick the most likely word
+      4. Append it to the context and go to step 2
 
-    Prompt: {input_ids[0, :2].tolist()}
-    Expected continuation: {input_ids[0, 2:].tolist()}
+    Prompt:   \"{' '.join(prompt_w)}\"
+    Expected: \"{' '.join(expect_w)}\"
 """)
 
-prompt = input_ids[:, :2]  # (1, 2: tokens [3, 7])
+prompt = input_ids[:, :2]  # "the cat"
 generated = prompt.clone()
 
-print(f"    Generating token by token:\n")
+print(f"    Generating word by word:\n")
 
 for gen_step in range(SEQ - 2):
     with contextlib.redirect_stdout(io.StringIO()):
         gen_logits = model(generated, verbose=False)
 
-    # Take logits at the last position
-    next_logits = gen_logits[:, -1, :]  # (1, 16)
-    next_probs = torch.softmax(next_logits / 0.01, dim=-1)  # near-greedy
-    next_token = next_probs.argmax(dim=-1, keepdim=True)    # (1, 1)
+    next_logits = gen_logits[:, -1, :]
+    next_probs = torch.softmax(next_logits / 0.01, dim=-1)
+    next_token = next_probs.argmax(dim=-1, keepdim=True)
 
     generated = torch.cat([generated, next_token], dim=1)
 
@@ -693,18 +747,27 @@ for gen_step in range(SEQ - 2):
     got_tok = next_token.item()
     match = "✓" if got_tok == expected_tok else "✗"
 
-    print(f"    Step {gen_step}: context={generated[0, :-1].tolist()}"
-          f"  → predicted={got_tok}  expected={expected_tok}  {match}")
+    ctx = words_to_str(generated[0, :-1].tolist())
+    print(f"    \"{ctx}\"  → predicts → "
+          f"\"{id2word[got_tok]}\"  (expected \"{id2word[expected_tok]}\")  {match}")
 
 gen_tokens = generated[0, 2:].tolist()
 exp_tokens = input_ids[0, 2:].tolist()
 matches = sum(g == e for g, e in zip(gen_tokens, exp_tokens))
 
 print(f"""
-    Prompt:     {input_ids[0, :2].tolist()}
-    Generated:  {gen_tokens}
-    Expected:   {exp_tokens}
-    Matches:    {matches}/{len(exp_tokens)}
+    RESULT:
+      Prompt:      \"{' '.join(prompt_w)}\"
+      Generated:   \"{words_to_str(gen_tokens)}\"
+      Expected:    \"{' '.join(expect_w)}\"
+      Full output: \"{words_to_str(generated[0].tolist())}\"
+      Matches:     {matches}/{len(exp_tokens)} words correctly generated
+
+    This is EXACTLY how ChatGPT works:
+      1. You type a prompt           →  \"{' '.join(prompt_w)}\"
+      2. Model predicts next word    →  one word at a time
+      3. Append and repeat           →  feeds each word back as input
+      4. Causal mask ensures each word sees only past context
 """)
 
 # ══════════════════════════════════════════════════════════════════════
@@ -768,7 +831,8 @@ print(f"""
       • Training: predict next token at every position (teacher forcing)
       • Generation: one token at a time, feed back into the model
 
-    Total parameters: {total_params:,}
-    Training: {initial_loss:.2f} → {step_loss.item():.4f} loss in {num_steps} steps
-    Generation: {matches}/{len(exp_tokens)} tokens correctly reproduced
+    Sentence:   \"{SENTENCE}\"
+    Parameters: {total_params:,}
+    Training:   {initial_loss:.2f} → {step_loss.item():.4f} loss in {num_steps} steps
+    Generation: \"{words_to_str(generated[0].tolist())}\" ({matches}/{len(exp_tokens)} words)
 """)
