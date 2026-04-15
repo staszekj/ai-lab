@@ -39,8 +39,172 @@ import math
 import torch
 import torch.nn as nn
 
-# Reuse our hand-built transformer block (now with mask support)
-from core.manual_transformer_block import ManualTransformerEncoderBlock
+
+# ══════════════════════════════════════════════════════════════════════
+# Transformer Encoder Block (inlined — no external dependency)
+# ══════════════════════════════════════════════════════════════════════
+
+class ManualTransformerEncoderBlock(nn.Module):
+    """
+    A single Pre-LN Transformer encoder block with fully manual
+    multi-head self-attention.
+
+    Hyperparameters
+    ---------------
+    d_model   = 768   – width of the model (embedding dimension)
+    num_heads = 12    – number of parallel attention heads
+    d_k       = 64    – dimension of each head  (d_model / num_heads)
+    d_ff      = 3072  – hidden size of the feed-forward network (4 × d_model)
+
+    Input / output shape: (batch_size, seq_len, d_model)
+    """
+
+    def __init__(
+        self,
+        d_model: int = 768,
+        num_heads: int = 12,
+        d_ff: int = 3072,
+    ) -> None:
+        super().__init__()
+
+        self.d_model = d_model
+        self.num_heads = num_heads
+        self.d_k = d_model // num_heads
+        assert d_model == num_heads * self.d_k, (
+            f"d_model ({d_model}) must equal num_heads ({num_heads}) × d_k ({self.d_k})"
+        )
+
+        self.d_ff = d_ff
+
+        self.W_Q = nn.Linear(d_model, d_model)
+        self.W_K = nn.Linear(d_model, d_model)
+        self.W_V = nn.Linear(d_model, d_model)
+        self.W_O = nn.Linear(d_model, d_model)
+
+        self.ffn_linear1 = nn.Linear(d_model, d_ff)
+        self.ffn_gelu = nn.GELU()
+        self.ffn_linear2 = nn.Linear(d_ff, d_model)
+
+        self.layer_norm_1 = nn.LayerNorm(d_model)
+        self.layer_norm_2 = nn.LayerNorm(d_model)
+
+        self.scale = math.sqrt(self.d_k)
+
+    def forward(self, x: torch.Tensor, attn_mask: torch.Tensor | None = None) -> torch.Tensor:
+        """
+        Parameters
+        ----------
+        x         : (batch_size, seq_len, d_model)
+        attn_mask : (seq_len, seq_len) or None — additive mask (0=attend, -inf=block)
+
+        Returns
+        -------
+        Tensor of shape (batch_size, seq_len, d_model)
+        """
+        batch_size, seq_len, d_model = x.shape
+        assert d_model == self.d_model, (
+            f"Input d_model ({d_model}) doesn't match expected ({self.d_model})"
+        )
+        print(f"\n{'='*60}")
+        print(f"Input X:  {x.shape}")
+
+        # ── STEP 1 – LayerNorm 1 ──────────────────────────────────────
+        x_norm1 = self.layer_norm_1(x)
+        print(f"After LayerNorm 1 (x_norm1):  {x_norm1.shape}")
+
+        # ── STEP 2 – Project to Q, K, V ──────────────────────────────
+        Q = self.W_Q(x_norm1)   # (batch, seq, d_model)
+        K = self.W_K(x_norm1)   # (batch, seq, d_model)
+        V = self.W_V(x_norm1)   # (batch, seq, d_model)
+        print(f"Q after projection:  {Q.shape}")
+        print(f"K after projection:  {K.shape}")
+        print(f"V after projection:  {V.shape}")
+
+        # ── STEP 3 – Split into heads ─────────────────────────────────
+        # (batch, seq, d_model) → (batch, heads, seq, d_k)
+        Q = Q.view(batch_size, seq_len, self.num_heads, self.d_k).transpose(1, 2)
+        K = K.view(batch_size, seq_len, self.num_heads, self.d_k).transpose(1, 2)
+        V = V.view(batch_size, seq_len, self.num_heads, self.d_k).transpose(1, 2)
+        print(f"Q after split into heads:  {Q.shape}")
+        print(f"K after split into heads:  {K.shape}")
+        print(f"V after split into heads:  {V.shape}")
+
+        assert Q.shape == (batch_size, self.num_heads, seq_len, self.d_k)
+        assert K.shape == (batch_size, self.num_heads, seq_len, self.d_k)
+        assert V.shape == (batch_size, self.num_heads, seq_len, self.d_k)
+
+        # ── STEP 4 – Transpose K ──────────────────────────────────────
+        K_T = K.transpose(-2, -1)
+        # K_T: (batch, heads, d_k, seq)
+        print(f"K transposed (K^T):  {K_T.shape}")
+
+        # ── STEP 5 – Raw attention scores (Q @ K^T) ───────────────────
+        attention_scores = torch.matmul(Q, K_T)
+        # (batch, heads, seq, seq)
+        print(f"Attention scores (Q @ K^T):  {attention_scores.shape}")
+
+        # ── STEP 6 – Scale ────────────────────────────────────────────
+        scaled_scores = attention_scores / self.scale
+        print(f"Scaled scores:  {scaled_scores.shape}")
+
+        # ── STEP 6b – Apply mask ──────────────────────────────────────
+        if attn_mask is not None:
+            scaled_scores = scaled_scores + attn_mask
+            print(f"Scaled scores after mask:  {scaled_scores.shape}")
+
+        # ── STEP 7 – Softmax → attention weights ──────────────────────
+        attention_weights = torch.softmax(scaled_scores, dim=-1)
+        # (batch, heads, seq, seq)
+        print(f"Attention weights (softmax):  {attention_weights.shape}")
+
+        # ── STEP 8 – Weighted sum of values ───────────────────────────
+        head_output = torch.matmul(attention_weights, V)
+        # (batch, heads, seq, d_k)
+        print(f"Attention output per head:  {head_output.shape}")
+
+        assert head_output.shape == (batch_size, self.num_heads, seq_len, self.d_k)
+
+        # ── STEP 9 – Concatenate heads ────────────────────────────────
+        concatenated = head_output.transpose(1, 2).contiguous()
+        concatenated = concatenated.view(batch_size, seq_len, self.d_model)
+        # (batch, seq, d_model)
+        print(f"Concatenated heads:  {concatenated.shape}")
+
+        assert concatenated.shape == (batch_size, seq_len, self.d_model)
+
+        # ── STEP 10 – Output projection ───────────────────────────────
+        attention_output = self.W_O(concatenated)
+        print(f"Output projection:  {attention_output.shape}")
+
+        # ── STEP 11 – First residual connection ───────────────────────
+        x1 = x + attention_output
+        # x1: (batch, seq, d_model)
+        print(f"After first residual add (x1):  {x1.shape}")
+
+        # ── STEP 12 – LayerNorm 2 ─────────────────────────────────────
+        x1_norm = self.layer_norm_2(x1)
+        print(f"After LayerNorm 2 (x1_norm):  {x1_norm.shape}")
+
+        # ── STEP 13 – Feed-Forward Network ────────────────────────────
+        ffn_hidden = self.ffn_linear1(x1_norm)
+        # (batch, seq, d_ff)
+        print(f"FFN hidden (after linear1):  {ffn_hidden.shape}")
+
+        ffn_hidden = self.ffn_gelu(ffn_hidden)
+
+        ffn_output = self.ffn_linear2(ffn_hidden)
+        # (batch, seq, d_model)
+        print(f"FFN output (after linear2):  {ffn_output.shape}")
+
+        # ── STEP 14 – Second residual connection ──────────────────────
+        output = x1 + ffn_output
+        # output: (batch, seq, d_model)
+        print(f"After second residual add (output):  {output.shape}")
+
+        print(f"Final output:  {output.shape}")
+        print(f"{'='*60}\n")
+
+        return output
 
 
 class ManualMiniGPT(nn.Module):
@@ -644,31 +808,53 @@ if __name__ == "__main__":
     print(f"  Sample: {input_ids[0, :10].tolist()} ...")
 
     # ==================================================================
-    # PHASE 1: FORWARD PASS (through all 4 layers)
+    # PHASE 1 — FORWARD PASS  (STEP 1 → 7 run inside model.forward())
     # ==================================================================
     logits = model(input_ids, verbose=True)
     # logits: (batch_size, seq_len, vocab_size)  e.g. (2, 20, 1000)
 
     print(f"\n{'='*60}")
-    print(f"FORWARD PASS COMPLETE")
+    print(f"FORWARD PASS COMPLETE  (STEP 1-7)")
     print(f"  Input:  {input_ids.shape}  (integer token IDs)")
     print(f"  Output: {logits.shape}  (logits over vocabulary)")
     print(f"{'='*60}")
 
     # ==================================================================
-    # PHASE 2: LOSS COMPUTATION
+    # STEP 8 — Softmax → next-token probabilities
+    # ==================================================================
+    # For each position, softmax turns the vocab_size logits into a
+    # probability distribution over the vocabulary.
+    # At position t, probs[t] = P(next token | tokens 0..t).
+    print(f"\n{'#'*60}")
+    print(f"# STEP 8 — SOFTMAX → NEXT-TOKEN PROBABILITIES")
+    print(f"{'#'*60}")
+
+    probs = torch.softmax(logits, dim=-1)
+    # probs: (batch_size, seq_len, vocab_size) — each row sums to 1.0
+    print(f"\nprobs: {probs.shape}  (each row sums to 1.0)")
+
+    # Show top-5 predictions for the LAST position of the first sample
+    last_probs = probs[0, -1]   # (vocab_size,)
+    top5 = last_probs.topk(5)
+    print(f"  Top-5 next-token predictions after position {seq_len - 1}:")
+    for prob, idx in zip(top5.values.tolist(), top5.indices.tolist()):
+        print(f"    token {idx:>5}: {prob:.4f}")
+    print(f"  (Untrained model — essentially random over {vocab_size} tokens)")
+
+    # ==================================================================
+    # STEP 9 — Language model loss  (next-token prediction)
     # ==================================================================
     print(f"\n{'#'*60}")
-    print(f"# PHASE 2: LOSS COMPUTATION")
+    print(f"# STEP 9 — LOSS COMPUTATION")
     print(f"{'#'*60}")
 
     loss = language_model_loss(logits, input_ids)
 
     # ==================================================================
-    # PHASE 3: BACKWARD PASS
+    # STEP 10 — Backward pass (gradient flow)
     # ==================================================================
     print(f"\n{'#'*60}")
-    print(f"# PHASE 3: BACKWARD PASS")
+    print(f"# STEP 10 — BACKWARD PASS")
     print(f"{'#'*60}")
 
     loss.backward()
@@ -747,10 +933,10 @@ if __name__ == "__main__":
     print(f"  (Random chance ≈ {1/vocab_size:.4f} per token = ~0 matches)")
 
     # ==================================================================
-    # PHASE 5: TRAINING LOOP — teach model to memorise the sequence
+    # STEP 11 — Training loop  (teach model to memorise the sequence)
     # ==================================================================
     print(f"\n{'#'*60}")
-    print(f"# PHASE 5: TRAINING LOOP (AdamW, memorise one sequence)")
+    print(f"# STEP 11 — TRAINING LOOP (AdamW, memorise one sequence)")
     print(f"{'#'*60}")
 
     # ── Set up the optimizer ─────────────────────────────────────────
