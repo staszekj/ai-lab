@@ -190,16 +190,29 @@ class ManualEncoderDecoder(nn.Module):
             print(f"# src_ids: {src_ids.shape}")
             print(f"{'#'*60}")
 
-        # Token + positional embeddings — same as in ManualMiniGPT
+        # ==============================================================
+        # STEP 1 — Token embedding lookup
+        # ==============================================================
         position_ids = torch.arange(src_len, device=src_ids.device)
         token_emb    = self.token_embedding(src_ids)         # (batch, src_len, d_model)
+
+        # ==============================================================
+        # STEP 2 — Positional embedding lookup
+        # ==============================================================
         pos_emb      = self.positional_embedding(position_ids)  # (src_len, d_model)
+
+        # ==============================================================
+        # STEP 3 — Combine token + position embeddings
+        # ==============================================================
         x = token_emb + pos_emb                              # (batch, src_len, d_model)
 
         if verbose:
             print(f"Token + position embeddings: {x.shape}")
 
-        # Pass through all encoder blocks — NO mask (bidirectional attention)
+        # ==============================================================
+        # STEP 5 — Pass through encoder blocks (no causal mask — bidirectional)
+        # ==============================================================
+        # (STEPs 1-3 done above; STEP 4 causal mask is decoder-only)
         for i, block in enumerate(self.encoder_blocks):
             if verbose:
                 print(f"\n{'─'*60}")
@@ -210,7 +223,9 @@ class ManualEncoderDecoder(nn.Module):
                 print(f"Output: {x.shape}  "
                       f"mean={x.mean().item():+.4f}  std={x.std().item():.4f}")
 
-        # Final LayerNorm after the last encoder block
+        # ==============================================================
+        # STEP 6 — Final LayerNorm
+        # ==============================================================
         encoder_output = self.encoder_final_norm(x)
         # encoder_output: (batch, src_len, d_model)
 
@@ -249,23 +264,37 @@ class ManualEncoderDecoder(nn.Module):
             print(f"# tgt_ids: {tgt_ids.shape}  encoder_output: {encoder_output.shape}")
             print(f"{'#'*60}")
 
-        # Token + positional embeddings (same shared embedding table as encoder)
+        # ==============================================================
+        # STEP 1 — Token embedding lookup
+        # ==============================================================
         position_ids = torch.arange(tgt_len, device=tgt_ids.device)
         token_emb    = self.token_embedding(tgt_ids)          # (batch, tgt_len, d_model)
+
+        # ==============================================================
+        # STEP 2 — Positional embedding lookup
+        # ==============================================================
         pos_emb      = self.positional_embedding(position_ids)  # (tgt_len, d_model)
+
+        # ==============================================================
+        # STEP 3 — Combine token + position embeddings
+        # ==============================================================
         x = token_emb + pos_emb                               # (batch, tgt_len, d_model)
 
         if verbose:
             print(f"Token + position embeddings: {x.shape}")
 
-        # Causal mask — each target token can only attend to past target tokens
+        # ==============================================================
+        # STEP 4 — Causal mask (each target token attends only to past tokens)
+        # ==============================================================
         tgt_mask = self._create_causal_mask(tgt_len, device=tgt_ids.device)
         # tgt_mask: (tgt_len, tgt_len)
 
         if verbose:
             print(f"Causal mask (tgt): {tgt_mask.shape}")
 
-        # Pass through all decoder blocks
+        # ==============================================================
+        # STEP 5 — Pass through decoder blocks (causal self-attn + cross-attn)
+        # ==============================================================
         # encoder_output is passed into EVERY decoder block (same tensor reused).
         for i, block in enumerate(self.decoder_blocks):
             if verbose:
@@ -277,8 +306,14 @@ class ManualEncoderDecoder(nn.Module):
                 print(f"Output: {x.shape}  "
                       f"mean={x.mean().item():+.4f}  std={x.std().item():.4f}")
 
-        # Final LayerNorm + LM head
-        x      = self.decoder_final_norm(x)
+        # ==============================================================
+        # STEP 6 — Final LayerNorm
+        # ==============================================================
+        x = self.decoder_final_norm(x)
+
+        # ==============================================================
+        # STEP 7 — LM Head → vocabulary logits
+        # ==============================================================
         logits = self.lm_head(x)
         # logits: (batch, tgt_len, vocab_size)
 
@@ -433,13 +468,19 @@ if __name__ == "__main__":
     assert logits.shape == (BATCH, TGT_LEN, VOCAB)
     print("Shape check passed ✓")
 
-    # Test loss + backward
+    # ==============================================================
+    # STEP 9 — Loss
+    # ==============================================================
     loss = nn.CrossEntropyLoss()(
         logits.reshape(-1, VOCAB),
         tgt_ids.reshape(-1),
     )
-    loss.backward()
     print(f"Loss: {loss.item():.4f}")
+
+    # ==============================================================
+    # STEP 10 — Backward
+    # ==============================================================
+    loss.backward()
     print(f"Encoder block 0 W_Q grad norm: "
           f"{model.encoder_blocks[0].W_Q.weight.grad.norm().item():.4f}")
     print(f"Decoder block 0 cross_W_K grad norm: "

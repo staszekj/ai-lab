@@ -116,7 +116,7 @@ class ManualTransformerEncoderBlock(nn.Module):
         # X: (batch_size, seq_len, d_model)  e.g. (2, 10, 768)
 
         # ==============================================================
-        # STEP 1 – First LayerNorm (Pre-LN: normalise before attention)
+        # STEP 5.1 – First LayerNorm (Pre-LN: normalise before attention)
         # ==============================================================
         # LayerNorm normalises each token vector (length d_model)
         # to have zero mean and unit variance, then applies a learned
@@ -126,7 +126,7 @@ class ManualTransformerEncoderBlock(nn.Module):
         print(f"After LayerNorm 1 (x_norm1):  {x_norm1.shape}")
 
         # ==============================================================
-        # STEP 2 – Linear projections to Q, K, V
+        # STEP 5.2 – Linear projections to Q, K, V
         # ==============================================================
         # We project the *normalised* input into three separate spaces.
         # Each projection is a full (d_model → d_model) linear layer,
@@ -150,7 +150,7 @@ class ManualTransformerEncoderBlock(nn.Module):
         print(f"V after projection:  {V.shape}")
 
         # ==============================================================
-        # STEP 3 – Reshape into multiple heads
+        # STEP 5.3 – Reshape into multiple heads
         # ==============================================================
         # The 768-dim vector of each token is logically carved into
         # 12 slices of 64 dims – one slice per head.
@@ -188,7 +188,7 @@ class ManualTransformerEncoderBlock(nn.Module):
         assert V.shape == (batch_size, self.num_heads, seq_len, self.d_k)
 
         # ==============================================================
-        # STEP 4 – Transpose K for dot-product attention
+        # STEP 5.4 – Transpose K for dot-product attention
         # ==============================================================
         # To compute Q @ K^T we need K with its last two dims swapped:
         #   K:   (batch, heads, seq, d_k)
@@ -200,7 +200,7 @@ class ManualTransformerEncoderBlock(nn.Module):
         print(f"K transposed (K^T):  {K_T.shape}")
 
         # ==============================================================
-        # STEP 5 – Raw attention scores  (Q @ K^T)
+        # STEP 5.5 – Raw attention scores  (Q @ K^T)
         # ==============================================================
         # Each score[i][j] measures how much query-token i should
         # attend to key-token j.  This is computed independently per
@@ -220,7 +220,7 @@ class ManualTransformerEncoderBlock(nn.Module):
         print(f"Attention scores (Q @ K^T):  {attention_scores.shape}")
 
         # ==============================================================
-        # STEP 6 – Scale the scores
+        # STEP 5.6 – Scale the scores
         # ==============================================================
         # Without scaling, the variance of the dot products grows with
         # d_k.  Large values push softmax into regions with tiny
@@ -232,7 +232,7 @@ class ManualTransformerEncoderBlock(nn.Module):
         print(f"Scaled scores:  {scaled_scores.shape}")
 
         # ==============================================================
-        # STEP 6b – Apply attention mask (optional, used for causal/GPT)
+        # STEP 5.6b – Apply attention mask (optional, used for causal/GPT)
         # ==============================================================
         # For causal (autoregressive) models, we add a mask of -inf to
         # positions where a token should NOT attend (future tokens).
@@ -247,7 +247,7 @@ class ManualTransformerEncoderBlock(nn.Module):
             print(f"Scaled scores after mask:  {scaled_scores.shape}")
 
         # ==============================================================
-        # STEP 7 – Softmax → attention weights
+        # STEP 5.7 – Softmax → attention weights
         # ==============================================================
         # Softmax along the *last* dimension (dim=-1) so that for each
         # query token the weights across all key tokens sum to 1.
@@ -260,7 +260,7 @@ class ManualTransformerEncoderBlock(nn.Module):
         print(f"Attention weights (softmax):  {attention_weights.shape}")
 
         # ==============================================================
-        # STEP 8 – Weighted sum of values  (attention_weights @ V)
+        # STEP 5.8 – Weighted sum of values  (attention_weights @ V)
         # ==============================================================
         # We multiply the attention weights with V to get a weighted
         # combination of value vectors.  Each output token is a blend
@@ -283,7 +283,7 @@ class ManualTransformerEncoderBlock(nn.Module):
         assert head_output.shape == (batch_size, self.num_heads, seq_len, self.d_k)
 
         # ==============================================================
-        # STEP 9 – Concatenate heads back into d_model dimension
+        # STEP 5.9 – Concatenate heads back into d_model dimension
         # ==============================================================
         # We now reverse the split we did in Step 3.
         #
@@ -307,7 +307,7 @@ class ManualTransformerEncoderBlock(nn.Module):
         assert concatenated.shape == (batch_size, seq_len, self.d_model)
 
         # ==============================================================
-        # STEP 10 – Output projection
+        # STEP 5.10 – Output projection
         # ==============================================================
         # A final linear layer that lets the model mix information
         # *across* heads.  Without this, each head's output would stay
@@ -319,7 +319,7 @@ class ManualTransformerEncoderBlock(nn.Module):
         print(f"Output projection:  {attention_output.shape}")
 
         # ==============================================================
-        # STEP 11 – First residual connection
+        # STEP 5.11 – First residual connection
         # ==============================================================
         # Add the original input (before LayerNorm) to the attention
         # output.  This is the "skip connection" that lets gradients
@@ -332,14 +332,14 @@ class ManualTransformerEncoderBlock(nn.Module):
         print(f"After first residual add (x1):  {x1.shape}")
 
         # ==============================================================
-        # STEP 12 – Second LayerNorm (before FFN)
+        # STEP 5.12 – Second LayerNorm (before FFN)
         # ==============================================================
         x1_norm = self.layer_norm_2(x1)
         # x1_norm: (batch_size, seq_len, d_model)  e.g. (2, 10, 768)
         print(f"After LayerNorm 2 (x1_norm):  {x1_norm.shape}")
 
         # ==============================================================
-        # STEP 13 – Feed-Forward Network (FFN)
+        # STEP 5.13 – Feed-Forward Network (FFN)
         # ==============================================================
         # The FFN is applied to each token position independently
         # (same weights, no cross-token interaction).
@@ -352,14 +352,14 @@ class ManualTransformerEncoderBlock(nn.Module):
         # The expansion to 4× lets the network learn richer per-token
         # transformations than a single 768→768 layer could.
 
-        # 13a – Expand to hidden dimension
+        # 5.13a – Expand to hidden dimension
         ffn_hidden = self.ffn_linear1(x1_norm)
         # x1_norm @ W1.weight^T + W1.bias
         #   (batch, seq, d_model) @ (d_model, d_ff) + (d_ff,)
         #   (2, 10, 768)          @ (768, 3072)      + (3072,)   = (2, 10, 3072)
         print(f"FFN hidden (after linear1):  {ffn_hidden.shape}")
 
-        # 13b – GELU activation
+        # 5.13b – GELU activation
         # GELU is a smooth approximation of ReLU that allows small
         # negative values through.  It's the standard activation in
         # BERT, GPT-2, and most modern transformers.
@@ -367,7 +367,7 @@ class ManualTransformerEncoderBlock(nn.Module):
         # ffn_hidden: (batch_size, seq_len, d_ff)  e.g. (2, 10, 3072)
         #   (shape unchanged, activation is element-wise)
 
-        # 13c – Compress back to d_model
+        # 5.13c – Compress back to d_model
         ffn_output = self.ffn_linear2(ffn_hidden)
         # ffn_hidden @ W2.weight^T + W2.bias
         #   (batch, seq, d_ff) @ (d_ff, d_model) + (d_model,)
@@ -375,7 +375,7 @@ class ManualTransformerEncoderBlock(nn.Module):
         print(f"FFN output (after linear2):  {ffn_output.shape}")
 
         # ==============================================================
-        # STEP 14 – Second residual connection
+        # STEP 5.14 – Second residual connection
         # ==============================================================
         # Pre-LN formula: output = x1 + FFN(LayerNorm(x1))
         output = x1 + ffn_output

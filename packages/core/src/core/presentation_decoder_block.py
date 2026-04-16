@@ -196,7 +196,7 @@ print_tensor_3d("x", x, [f"[batch 0]"])
 # SUB-LAYER 1 — Masked Self-Attention
 # ══════════════════════════════════════════════════════════════════════
 
-step_header("1", "Masked Self-Attention (decoder ↔ decoder, causal)")
+step_header("5.1", "Masked Self-Attention (decoder ↔ decoder, causal)")
 print(f"""
     Q, K, V all come from x (the decoder input).
     Causal mask: each target token can only attend to itself and past tokens.
@@ -266,7 +266,7 @@ print_tensor_3d("  x1", x1, [f"[batch 0]"])
 # SUB-LAYER 2 — Cross-Attention
 # ══════════════════════════════════════════════════════════════════════
 
-step_header("2", "Cross-Attention (Q from decoder, K/V from encoder)")
+step_header("5.2", "Cross-Attention (Q from decoder, K/V from encoder)")
 print(f"""
     THIS IS THE NEW PART — UNIQUE TO THE DECODER BLOCK.
 
@@ -353,7 +353,7 @@ print_tensor_3d("  x2", x2, [f"[batch 0]"])
 # SUB-LAYER 3 — FFN
 # ══════════════════════════════════════════════════════════════════════
 
-step_header("3", "Feed-Forward Network (FFN)")
+step_header("5.3", "Feed-Forward Network (FFN)")
 print(f"""
     Identical to the encoder's FFN.
     Applied independently to each of the {TGT_SEQ} target positions.

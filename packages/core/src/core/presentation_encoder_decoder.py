@@ -339,7 +339,7 @@ print(f"\n    After final LayerNorm + LM Head:  logits {tuple(logits.shape)}")
 # STEP 3 — Predictions
 # ══════════════════════════════════════════════════════════════════════
 
-step_header("3", "Predictions at each target position")
+step_header("8", "Predictions at each target position")
 print(f"""
     For each of the {tgt_len} target positions, the model scores all {VOCAB} vocabulary words.
     tgt_input  = "{' '.join(tgt_words_in)}"
@@ -363,7 +363,7 @@ print(f"\n    (Untrained model → essentially random predictions.  Loss ≈ log
 # STEP 4 — Loss
 # ══════════════════════════════════════════════════════════════════════
 
-step_header("4", "Cross-entropy loss")
+step_header("9", "Cross-entropy loss")
 print(f"""
     loss = CrossEntropyLoss(logits.reshape(-1, vocab), tgt_target.reshape(-1))
 
@@ -384,7 +384,7 @@ print(f"    Ratio:            {loss.item() / random_loss:.3f}  (≈ 1.0 for untr
 # STEP 5 — Backward pass
 # ══════════════════════════════════════════════════════════════════════
 
-step_header("5", "Backward pass — gradient flow through cross-attention")
+step_header("10", "Backward pass — gradient flow through cross-attention")
 print(f"""
     A single loss.backward() differentiates through the ENTIRE graph:
 
@@ -470,7 +470,7 @@ print(f"""    KEY OBSERVATION:
 # STEP 6 — Autoregressive generation
 # ══════════════════════════════════════════════════════════════════════
 
-step_header("6", "Autoregressive generation (encoder runs once)")
+section("Autoregressive generation (encoder runs once — untrained model)")
 print(f"""
     During inference (no teacher forcing):
 
@@ -526,7 +526,7 @@ print(f"    (Untrained — random predictions.  Train the model to get meaningfu
 #     The task is EXPLICIT: source ≠ target, two different sequences.
 # ══════════════════════════════════════════════════════════════════════
 
-step_header("7", "Training — learn \"the cat\" → \"climbs a tree\"")
+step_header("11", "Training — learn \"the cat\" → \"climbs a tree\"")
 
 TRAIN_SRC     = "the cat"
 TRAIN_TGT     = "climbs a tree"    # what the decoder should produce
@@ -627,7 +627,7 @@ print(f"""
 # STEP 8 — Generation: encode "the cat" once, decode autoregressively
 # ══════════════════════════════════════════════════════════════════════
 
-step_header("8", "Generation — prompt \"the cat\" → generates \"climbs a tree\"")
+step_header("12", "Generation — prompt \"the cat\" → generates \"climbs a tree\"")
 print(f"""
     Now we use the TRAINED model in inference mode.
 

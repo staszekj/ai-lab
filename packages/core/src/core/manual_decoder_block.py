@@ -218,7 +218,7 @@ class ManualDecoderBlock(nn.Module):
         print(f"DecoderBlock | x: {x.shape}  encoder_output: {encoder_output.shape}")
 
         # ==============================================================
-        # SUB-LAYER 1 — Masked Self-Attention
+        # STEP 5.1 — Masked Self-Attention
         # ==============================================================
         # Decoder tokens attend to each other, but ONLY to past positions.
         # Q, K, V all come from x (self-attention).
@@ -241,7 +241,7 @@ class ManualDecoderBlock(nn.Module):
         print(f"After residual #1:                x1:          {x1.shape}")
 
         # ==============================================================
-        # SUB-LAYER 2 — Cross-Attention  ← THE KEY NEW STEP
+        # STEP 5.2 — Cross-Attention  ← THE KEY NEW STEP
         # ==============================================================
         # Q comes from x1 (decoder, after self-attention).
         # K and V come from encoder_output (encoder's final hidden states).
@@ -283,7 +283,7 @@ class ManualDecoderBlock(nn.Module):
         print(f"After residual #2:                x2:          {x2.shape}")
 
         # ==============================================================
-        # SUB-LAYER 3 — Feed-Forward Network
+        # STEP 5.3 — Feed-Forward Network
         # ==============================================================
         # Applied independently to each of the tgt_len positions.
         # Identical to the encoder's FFN.
