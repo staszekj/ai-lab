@@ -1,3 +1,5 @@
 node_modules/
-data/radix-primitives/
-extracted_types.jsonl
+dist/
+data/repos/
+data/extracted_types.jsonl
+data/training_pairs.jsonl

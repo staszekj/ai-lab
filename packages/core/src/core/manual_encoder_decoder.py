@@ -218,7 +218,7 @@ class ManualEncoderDecoder(nn.Module):
                 print(f"\n{'─'*60}")
                 print(f"ENCODER BLOCK {i}")
                 print(f"Input:  {x.shape}")
-            x = block(x, attn_mask=None)
+            x = block(x, attn_mask=None, verbose=verbose)
             if verbose:
                 print(f"Output: {x.shape}  "
                       f"mean={x.mean().item():+.4f}  std={x.std().item():.4f}")
@@ -301,7 +301,7 @@ class ManualEncoderDecoder(nn.Module):
                 print(f"\n{'─'*60}")
                 print(f"DECODER BLOCK {i}")
                 print(f"x: {x.shape}  encoder_output: {encoder_output.shape}")
-            x = block(x, encoder_output, tgt_mask=tgt_mask)
+            x = block(x, encoder_output, tgt_mask=tgt_mask, verbose=verbose)
             if verbose:
                 print(f"Output: {x.shape}  "
                       f"mean={x.mean().item():+.4f}  std={x.std().item():.4f}")
@@ -361,6 +361,7 @@ class ManualEncoderDecoder(nn.Module):
         eos_id: int,
         max_new_tokens: int = 20,
         temperature: float = 1.0,
+        verbose: bool = True,
     ) -> torch.Tensor:
         """
         Seq2seq autoregressive generation.
@@ -380,10 +381,11 @@ class ManualEncoderDecoder(nn.Module):
         -------
         generated_ids : (1, generated_len)  — excludes <BOS>
         """
-        print(f"\n{'#'*60}")
-        print(f"# AUTOREGRESSIVE GENERATION  (seq2seq)")
-        print(f"# src_ids: {src_ids.shape}  max_new_tokens: {max_new_tokens}")
-        print(f"{'#'*60}")
+        if verbose:
+            print(f"\n{'#'*60}")
+            print(f"# AUTOREGRESSIVE GENERATION  (seq2seq)")
+            print(f"# src_ids: {src_ids.shape}  max_new_tokens: {max_new_tokens}")
+            print(f"{'#'*60}")
 
         # ── Encode source ONCE ────────────────────────────────────────
         # This is the key advantage of encoder-decoder over decoder-only:
@@ -392,8 +394,9 @@ class ManualEncoderDecoder(nn.Module):
         # growing context.  Here the source processing cost is fixed.
         encoder_output = self.encode(src_ids, verbose=False)
         # encoder_output: (1, src_len, d_model)
-        print(f"\nEncoder output cached: {encoder_output.shape}")
-        print(f"Decoding autoregressively ({max_new_tokens} max tokens)...")
+        if verbose:
+            print(f"\nEncoder output cached: {encoder_output.shape}")
+            print(f"Decoding autoregressively ({max_new_tokens} max tokens)...")
 
         generated = torch.tensor([[bos_id]], device=src_ids.device)
         # generated: (1, 1) — starts with <BOS>
@@ -413,12 +416,14 @@ class ManualEncoderDecoder(nn.Module):
             generated = torch.cat([generated, next_token], dim=1)
             # generated: (1, step + 2)
 
-            print(f"  Step {step:3d}: token {next_token.item():5d}  "
-                  f"(prob={probs[0, next_token.item()].item():.4f})  "
-                  f"seq_len={generated.shape[1]}")
+            if verbose:
+                print(f"  Step {step:3d}: token {next_token.item():5d}  "
+                      f"(prob={probs[0, next_token.item()].item():.4f})  "
+                      f"seq_len={generated.shape[1]}")
 
             if next_token.item() == eos_id:
-                print(f"  → <EOS> reached, stopping.")
+                if verbose:
+                    print(f"  → <EOS> reached, stopping.")
                 break
 
         # Return without the leading <BOS>

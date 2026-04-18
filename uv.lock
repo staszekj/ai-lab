@@ -1901,10 +1901,22 @@ version = "0.1.0"
 source = { editable = "packages/ts-type-refiner" }
 dependencies = [
     { name = "core" },
+    { name = "tokenizers" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "torch" },
 ]
 
 [package.metadata]
-requires-dist = [{ name = "core", editable = "packages/core" }]
+requires-dist = [
+    { name = "core", editable = "packages/core" },
+    { name = "tokenizers", specifier = ">=0.19" },
+]
+
+[package.metadata.requires-dev]
+dev = [{ name = "torch", specifier = ">=2.3.1", index = "https://download.pytorch.org/whl/cu121" }]
 
 [[package]]
 name = "typer"

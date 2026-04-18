@@ -7,7 +7,7 @@
     "build": "tsc",
     "extract": "tsx src/extract.ts",
     "degrade": "tsx src/degrade.ts",
-    "start": "tsx src/extract.ts"
+    "pipeline": "tsx src/extract.ts data/repos/radix-primitives data/repos/tanstack-query data/repos/react-hook-form data/repos/react-aria data/repos/react-router data/repos/zustand --context 7 --output data/extracted_types.jsonl && tsx src/degrade.ts data/extracted_types.jsonl --output data/training_pairs.jsonl"
   },
   "dependencies": {
     "ts-morph": "^24.0.0"

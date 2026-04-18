@@ -195,6 +195,7 @@ class ManualDecoderBlock(nn.Module):
         encoder_output: torch.Tensor,
         tgt_mask: "torch.Tensor | None" = None,
         src_mask: "torch.Tensor | None" = None,
+        verbose: bool = True,
     ) -> torch.Tensor:
         """
         Parameters
@@ -214,8 +215,9 @@ class ManualDecoderBlock(nn.Module):
             f"Input d_model ({d_model}) doesn't match expected ({self.d_model})"
         )
 
-        print(f"\n{'='*60}")
-        print(f"DecoderBlock | x: {x.shape}  encoder_output: {encoder_output.shape}")
+        if verbose:
+            print(f"\n{'='*60}")
+            print(f"DecoderBlock | x: {x.shape}  encoder_output: {encoder_output.shape}")
 
         # ==============================================================
         # STEP 5.1 — Masked Self-Attention
@@ -225,7 +227,8 @@ class ManualDecoderBlock(nn.Module):
         # The causal mask (tgt_mask) blocks future target positions.
         x_norm1 = self.layer_norm_1(x)
         # x_norm1: (batch, tgt_len, d_model)
-        print(f"After LayerNorm 1:                x_norm1:     {x_norm1.shape}")
+        if verbose:
+            print(f"After LayerNorm 1:                x_norm1:     {x_norm1.shape}")
 
         self_attn_out = self._multi_head_attention(
             Q_src=x_norm1, K_src=x_norm1, V_src=x_norm1,
@@ -234,11 +237,13 @@ class ManualDecoderBlock(nn.Module):
             attn_mask=tgt_mask,
         )
         # self_attn_out: (batch, tgt_len, d_model)
-        print(f"Masked self-attention output:     self_attn:   {self_attn_out.shape}")
+        if verbose:
+            print(f"Masked self-attention output:     self_attn:   {self_attn_out.shape}")
 
         x1 = x + self_attn_out
         # x1: (batch, tgt_len, d_model)
-        print(f"After residual #1:                x1:          {x1.shape}")
+        if verbose:
+            print(f"After residual #1:                x1:          {x1.shape}")
 
         # ==============================================================
         # STEP 5.2 — Cross-Attention  ← THE KEY NEW STEP
@@ -265,7 +270,8 @@ class ManualDecoderBlock(nn.Module):
         #   dL/dcross_W_O  → stays in decoder
         x1_norm = self.layer_norm_2(x1)
         # x1_norm: (batch, tgt_len, d_model)
-        print(f"After LayerNorm 2:                x1_norm:     {x1_norm.shape}")
+        if verbose:
+            print(f"After LayerNorm 2:                x1_norm:     {x1_norm.shape}")
 
         cross_attn_out = self._multi_head_attention(
             Q_src=x1_norm,         # Q from decoder
@@ -276,11 +282,13 @@ class ManualDecoderBlock(nn.Module):
             attn_mask=src_mask,    # usually None; could mask <pad> tokens
         )
         # cross_attn_out: (batch, tgt_len, d_model)
-        print(f"Cross-attention output:           cross_attn:  {cross_attn_out.shape}")
+        if verbose:
+            print(f"Cross-attention output:           cross_attn:  {cross_attn_out.shape}")
 
         x2 = x1 + cross_attn_out
         # x2: (batch, tgt_len, d_model)
-        print(f"After residual #2:                x2:          {x2.shape}")
+        if verbose:
+            print(f"After residual #2:                x2:          {x2.shape}")
 
         # ==============================================================
         # STEP 5.3 — Feed-Forward Network
@@ -288,19 +296,22 @@ class ManualDecoderBlock(nn.Module):
         # Applied independently to each of the tgt_len positions.
         # Identical to the encoder's FFN.
         x2_norm = self.layer_norm_3(x2)
-        print(f"After LayerNorm 3:                x2_norm:     {x2_norm.shape}")
+        if verbose:
+            print(f"After LayerNorm 3:                x2_norm:     {x2_norm.shape}")
 
         ffn_hidden = self.ffn_linear1(x2_norm)
         # ffn_hidden: (batch, tgt_len, d_ff)
         ffn_hidden = self.ffn_gelu(ffn_hidden)
         ffn_out    = self.ffn_linear2(ffn_hidden)
         # ffn_out: (batch, tgt_len, d_model)
-        print(f"FFN output:                       ffn_out:     {ffn_out.shape}")
+        if verbose:
+            print(f"FFN output:                       ffn_out:     {ffn_out.shape}")
 
         output = x2 + ffn_out
         # output: (batch, tgt_len, d_model)
-        print(f"After residual #3 (output):       output:      {output.shape}")
-        print(f"{'='*60}\n")
+        if verbose:
+            print(f"After residual #3 (output):       output:      {output.shape}")
+            print(f"{'='*60}\n")
 
         return output
 

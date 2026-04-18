@@ -91,7 +91,7 @@ class ManualTransformerEncoderBlock(nn.Module):
     # ------------------------------------------------------------------
     # Forward pass – every step is explicit
     # ------------------------------------------------------------------
-    def forward(self, x: torch.Tensor, attn_mask: torch.Tensor | None = None) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, attn_mask: torch.Tensor | None = None, verbose: bool = True) -> torch.Tensor:
         """
         Parameters
         ----------
@@ -111,8 +111,9 @@ class ManualTransformerEncoderBlock(nn.Module):
         assert d_model == self.d_model, (
             f"Input d_model ({d_model}) doesn't match expected ({self.d_model})"
         )
-        print(f"\n{'='*60}")
-        print(f"Input X:  {x.shape}")
+        if verbose:
+            print(f"\n{'='*60}")
+            print(f"Input X:  {x.shape}")
         # X: (batch_size, seq_len, d_model)  e.g. (2, 10, 768)
 
         # ==============================================================
@@ -123,7 +124,8 @@ class ManualTransformerEncoderBlock(nn.Module):
         # affine transform (gamma, beta).  This keeps activations stable.
         x_norm1 = self.layer_norm_1(x)
         # x_norm1: (batch_size, seq_len, d_model)  e.g. (2, 10, 768)
-        print(f"After LayerNorm 1 (x_norm1):  {x_norm1.shape}")
+        if verbose:
+            print(f"After LayerNorm 1 (x_norm1):  {x_norm1.shape}")
 
         # ==============================================================
         # STEP 5.2 – Linear projections to Q, K, V
@@ -145,9 +147,10 @@ class ManualTransformerEncoderBlock(nn.Module):
         # Q: (batch_size, seq_len, d_model)  e.g. (2, 10, 768)
         # K: (batch_size, seq_len, d_model)  e.g. (2, 10, 768)
         # V: (batch_size, seq_len, d_model)  e.g. (2, 10, 768)
-        print(f"Q after projection:  {Q.shape}")
-        print(f"K after projection:  {K.shape}")
-        print(f"V after projection:  {V.shape}")
+        if verbose:
+            print(f"Q after projection:  {Q.shape}")
+            print(f"K after projection:  {K.shape}")
+            print(f"V after projection:  {V.shape}")
 
         # ==============================================================
         # STEP 5.3 – Reshape into multiple heads
@@ -178,9 +181,10 @@ class ManualTransformerEncoderBlock(nn.Module):
         V = V.view(batch_size, seq_len, self.num_heads, self.d_k).transpose(1, 2)
         # V: (batch_size, num_heads, seq_len, d_k)  e.g. (2, 12, 10, 64)
 
-        print(f"Q after split into heads:  {Q.shape}")
-        print(f"K after split into heads:  {K.shape}")
-        print(f"V after split into heads:  {V.shape}")
+        if verbose:
+            print(f"Q after split into heads:  {Q.shape}")
+            print(f"K after split into heads:  {K.shape}")
+            print(f"V after split into heads:  {V.shape}")
 
         # Verify shapes are correct after the reshape + transpose
         assert Q.shape == (batch_size, self.num_heads, seq_len, self.d_k)
@@ -197,7 +201,8 @@ class ManualTransformerEncoderBlock(nn.Module):
         # matrix for every (batch, head) pair.
         K_T = K.transpose(-2, -1)
         # K_T: (batch_size, num_heads, d_k, seq_len)  e.g. (2, 12, 64, 10)
-        print(f"K transposed (K^T):  {K_T.shape}")
+        if verbose:
+            print(f"K transposed (K^T):  {K_T.shape}")
 
         # ==============================================================
         # STEP 5.5 – Raw attention scores  (Q @ K^T)
@@ -217,7 +222,8 @@ class ManualTransformerEncoderBlock(nn.Module):
         # ─── matmul contracts over the last dim of Q (d_k=64)
         #     and second-to-last dim of K^T (d_k=64).
         #     The first two dims (batch, heads) are batch dims.
-        print(f"Attention scores (Q @ K^T):  {attention_scores.shape}")
+        if verbose:
+            print(f"Attention scores (Q @ K^T):  {attention_scores.shape}")
 
         # ==============================================================
         # STEP 5.6 – Scale the scores
@@ -229,7 +235,8 @@ class ManualTransformerEncoderBlock(nn.Module):
         scaled_scores = attention_scores / self.scale
         # scaled_scores: (batch_size, num_heads, seq_len, seq_len)
         #   e.g. (2, 12, 10, 10)
-        print(f"Scaled scores:  {scaled_scores.shape}")
+        if verbose:
+            print(f"Scaled scores:  {scaled_scores.shape}")
 
         # ==============================================================
         # STEP 5.6b – Apply attention mask (optional, used for causal/GPT)
@@ -244,7 +251,8 @@ class ManualTransformerEncoderBlock(nn.Module):
             scaled_scores = scaled_scores + attn_mask
             # scaled_scores: (batch_size, num_heads, seq_len, seq_len)
             # Positions with -inf will become 0 after softmax.
-            print(f"Scaled scores after mask:  {scaled_scores.shape}")
+            if verbose:
+                print(f"Scaled scores after mask:  {scaled_scores.shape}")
 
         # ==============================================================
         # STEP 5.7 – Softmax → attention weights
@@ -257,7 +265,8 @@ class ManualTransformerEncoderBlock(nn.Module):
         # attention_weights: (batch_size, num_heads, seq_len, seq_len)
         #   e.g. (2, 12, 10, 10)
         #   Each row sums to 1.0
-        print(f"Attention weights (softmax):  {attention_weights.shape}")
+        if verbose:
+            print(f"Attention weights (softmax):  {attention_weights.shape}")
 
         # ==============================================================
         # STEP 5.8 – Weighted sum of values  (attention_weights @ V)
@@ -278,7 +287,8 @@ class ManualTransformerEncoderBlock(nn.Module):
         # ─── matmul contracts over the last dim of weights (seq=10)
         #     and second-to-last dim of V (seq=10).
         #     Result: each token gets a weighted blend of all 64-dim value vectors.
-        print(f"Attention output per head:  {head_output.shape}")
+        if verbose:
+            print(f"Attention output per head:  {head_output.shape}")
 
         assert head_output.shape == (batch_size, self.num_heads, seq_len, self.d_k)
 
@@ -302,7 +312,8 @@ class ManualTransformerEncoderBlock(nn.Module):
 
         concatenated = concatenated.view(batch_size, seq_len, self.d_model)
         # concatenated: (batch_size, seq_len, d_model)  e.g. (2, 10, 768)
-        print(f"Concatenated heads:  {concatenated.shape}")
+        if verbose:
+            print(f"Concatenated heads:  {concatenated.shape}")
 
         assert concatenated.shape == (batch_size, seq_len, self.d_model)
 
@@ -316,7 +327,8 @@ class ManualTransformerEncoderBlock(nn.Module):
         # concatenated @ W_O.weight^T + W_O.bias
         #   (batch, seq, d_model) @ (d_model, d_model) + (d_model,)
         #   (2, 10, 768)          @ (768, 768)          + (768,)    = (2, 10, 768)
-        print(f"Output projection:  {attention_output.shape}")
+        if verbose:
+            print(f"Output projection:  {attention_output.shape}")
 
         # ==============================================================
         # STEP 5.11 – First residual connection
@@ -329,14 +341,16 @@ class ManualTransformerEncoderBlock(nn.Module):
         # Pre-LN formula: x1 = x + Attention(LayerNorm(x))
         x1 = x + attention_output
         # x1: (batch_size, seq_len, d_model)  e.g. (2, 10, 768)
-        print(f"After first residual add (x1):  {x1.shape}")
+        if verbose:
+            print(f"After first residual add (x1):  {x1.shape}")
 
         # ==============================================================
         # STEP 5.12 – Second LayerNorm (before FFN)
         # ==============================================================
         x1_norm = self.layer_norm_2(x1)
         # x1_norm: (batch_size, seq_len, d_model)  e.g. (2, 10, 768)
-        print(f"After LayerNorm 2 (x1_norm):  {x1_norm.shape}")
+        if verbose:
+            print(f"After LayerNorm 2 (x1_norm):  {x1_norm.shape}")
 
         # ==============================================================
         # STEP 5.13 – Feed-Forward Network (FFN)
@@ -357,7 +371,8 @@ class ManualTransformerEncoderBlock(nn.Module):
         # x1_norm @ W1.weight^T + W1.bias
         #   (batch, seq, d_model) @ (d_model, d_ff) + (d_ff,)
         #   (2, 10, 768)          @ (768, 3072)      + (3072,)   = (2, 10, 3072)
-        print(f"FFN hidden (after linear1):  {ffn_hidden.shape}")
+        if verbose:
+            print(f"FFN hidden (after linear1):  {ffn_hidden.shape}")
 
         # 5.13b – GELU activation
         # GELU is a smooth approximation of ReLU that allows small
@@ -372,7 +387,8 @@ class ManualTransformerEncoderBlock(nn.Module):
         # ffn_hidden @ W2.weight^T + W2.bias
         #   (batch, seq, d_ff) @ (d_ff, d_model) + (d_model,)
         #   (2, 10, 3072)      @ (3072, 768)      + (768,)    = (2, 10, 768)
-        print(f"FFN output (after linear2):  {ffn_output.shape}")
+        if verbose:
+            print(f"FFN output (after linear2):  {ffn_output.shape}")
 
         # ==============================================================
         # STEP 5.14 – Second residual connection
@@ -380,13 +396,15 @@ class ManualTransformerEncoderBlock(nn.Module):
         # Pre-LN formula: output = x1 + FFN(LayerNorm(x1))
         output = x1 + ffn_output
         # output: (batch_size, seq_len, d_model)  e.g. (2, 10, 768)
-        print(f"After second residual add (output):  {output.shape}")
+        if verbose:
+            print(f"After second residual add (output):  {output.shape}")
 
         # ==============================================================
         # Done – return the final output
         # ==============================================================
-        print(f"Final output:  {output.shape}")
-        print(f"{'='*60}\n")
+        if verbose:
+            print(f"Final output:  {output.shape}")
+            print(f"{'='*60}\n")
 
         return output
         # output: (batch_size, seq_len, d_model)  e.g. (2, 10, 768)

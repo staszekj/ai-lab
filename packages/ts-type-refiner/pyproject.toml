@@ -5,10 +5,24 @@ description = "Train an encoder-decoder model to improve TypeScript types"
 requires-python = ">=3.12"
 dependencies = [
     "core",
+    "tokenizers>=0.19",
 ]
 
 [tool.uv.sources]
 core = { workspace = true }
+torch = { index = "pytorch-cu121" }
+
+[[tool.uv.index]]
+name = "pytorch-cu121"
+url = "https://download.pytorch.org/whl/cu121"
+explicit = true
+
+[dependency-groups]
+dev = ["torch>=2.3.1"]
+
+[project.scripts]
+phase0-train = "ts_type_refiner.phase0_train:main"
+phase1-train = "ts_type_refiner.phase1_train:main"
 
 [build-system]
 requires = ["hatchling"]

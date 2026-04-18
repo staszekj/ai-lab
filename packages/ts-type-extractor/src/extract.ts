@@ -1,25 +1,12 @@
 /**
- * TypeScript Type Extractor for React Codebases
- * ===============================================
+ * TypeScript Type Extractor
  *
- * Uses ts-morph (TypeScript AST parser) to extract type annotations
- * from React/TypeScript source files.
- *
- * Purpose:
- *   Build training data for an ML model that suggests precise React
- *   TypeScript types.  For example:
- *     Input:  "const handleClick = (e: Event) => ..."
- *     Target: "MouseEvent" (the more precise type)
- *
- * Pipeline:
- *   1. Parse .tsx/.ts files with ts-morph
- *   2. Walk the AST to find every type annotation
- *   3. Extract: { context, type, location }
- *   4. Output JSON lines — one training sample per line
+ * Parses TS/TSX files via AST and extracts every type annotation
+ * with surrounding code context.
  *
  * Usage:
- *   npx tsx src/extract.ts <path-to-react-project>
- *   npx tsx src/extract.ts ./samples
+ *   npx tsx src/extract.ts <path...> [--context 7] [--output out.jsonl]
+ *   npx tsx src/extract.ts data/repos/radix-primitives data/repos/tanstack-query
  */
 
 import { Project, SyntaxKind, Node } from "ts-morph";
@@ -27,40 +14,59 @@ import * as path from "path";
 import * as fs from "fs";
 
 // ══════════════════════════════════════════════════════════════════════
-// Types for extracted data
+// Types
 // ══════════════════════════════════════════════════════════════════════
 
 interface TypeAnnotation {
-  /** The file where this annotation was found */
   file: string;
-  /** Line number (1-based) */
   line: number;
-  /** What kind of annotation: parameter, variable, return type, etc. */
   kind: string;
-  /** The name of the variable/parameter/property */
   name: string;
-  /** The type annotation as written in source code */
   typeText: string;
-  /** Surrounding code context (a few lines around the annotation) */
   context: string;
-  /** Parent function/component name, if any */
   parentName: string | null;
 }
 
 // ══════════════════════════════════════════════════════════════════════
-// Helper: get N lines of context around a given line
+// CLI
 // ══════════════════════════════════════════════════════════════════════
 
-function getContext(sourceText: string, line: number, radius: number = 3): string {
+function parseArgs() {
+  const args = process.argv.slice(2);
+  const paths: string[] = [];
+  let contextRadius = 7;
+  let output = "";
+
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === "--context" && args[i + 1]) {
+      contextRadius = parseInt(args[i + 1], 10);
+      i++;
+    } else if (args[i] === "--output" && args[i + 1]) {
+      output = args[i + 1];
+      i++;
+    } else {
+      paths.push(args[i]);
+    }
+  }
+
+  if (paths.length === 0) paths.push("./samples");
+  return { paths, contextRadius, output };
+}
+
+// ══════════════════════════════════════════════════════════════════════
+// Helpers
+// ══════════════════════════════════════════════════════════════════════
+
+function getContext(
+  sourceText: string,
+  line: number,
+  radius: number,
+): string {
   const lines = sourceText.split("\n");
   const start = Math.max(0, line - 1 - radius);
   const end = Math.min(lines.length, line - 1 + radius + 1);
   return lines.slice(start, end).join("\n");
 }
-
-// ══════════════════════════════════════════════════════════════════════
-// Helper: find the parent function/component name
-// ══════════════════════════════════════════════════════════════════════
 
 function getParentName(node: Node): string | null {
   let current = node.getParent();
@@ -71,7 +77,6 @@ function getParentName(node: Node): string | null {
       Node.isFunctionExpression(current) ||
       Node.isMethodDeclaration(current)
     ) {
-      // For arrow functions assigned to a variable: const Foo = () => ...
       const parent = current.getParent();
       if (parent && Node.isVariableDeclaration(parent)) {
         return parent.getName();
@@ -90,85 +95,102 @@ function getParentName(node: Node): string | null {
 }
 
 // ══════════════════════════════════════════════════════════════════════
-// Main extraction logic
+// Extraction
 // ══════════════════════════════════════════════════════════════════════
 
-function extractTypeAnnotations(projectPath: string): TypeAnnotation[] {
-  console.log(`\n${"═".repeat(60)}`);
-  console.log(`TYPE EXTRACTOR — scanning: ${projectPath}`);
-  console.log(`${"═".repeat(60)}\n`);
+// Skip auto-generated files — they contain huge machine-made types
+// that are useless for training and can hang the parser.
+const SKIP_FILE_PATTERNS = [
+  /_generated/,
+  /\.generated\./,
+  /generated\//,
+  /\.gen\.ts/,
+  /__generated__/,
+  /\.d\.ts$/,
+];
 
-  // Create a ts-morph project.
-  // ts-morph wraps the TypeScript compiler API and gives us
-  // a high-level interface to walk the AST.
-  const tsconfigPath = path.join(projectPath, "tsconfig.json");
-  const hasTsConfig = fs.existsSync(tsconfigPath);
+// Max type annotation length in characters.
+// Anything longer is auto-gen noise, not a real hand-written type.
+const MAX_TYPE_LENGTH = 200;
 
+function extractFromProject(
+  projectPath: string,
+  contextRadius: number,
+): TypeAnnotation[] {
+  const repoName = path.basename(projectPath);
+  const t0 = Date.now();
+
+  // Always use glob-based discovery to handle monorepos reliably.
+  // tsconfig in monorepo roots often doesn't include sub-packages.
   const project = new Project({
-    // If the target project has a tsconfig, use it for type resolution.
-    // Otherwise, just add files manually.
-    ...(hasTsConfig ? { tsConfigFilePath: tsconfigPath } : {}),
-    skipAddingFilesFromTsConfig: !hasTsConfig,
+    skipAddingFilesFromTsConfig: true,
   });
+  project.addSourceFilesAtPaths(path.join(projectPath, "**/*.{ts,tsx}"));
 
-  // If no tsconfig, add all .ts/.tsx files from the path
-  if (!hasTsConfig) {
-    const pattern = path.join(projectPath, "**/*.{ts,tsx}");
-    project.addSourceFilesAtPaths(pattern);
-  }
-
-  const sourceFiles = project.getSourceFiles();
-  console.log(`Found ${sourceFiles.length} TypeScript file(s)\n`);
+  const allFiles = project.getSourceFiles();
+  let skippedFiles = 0;
+  const sourceFiles = allFiles.filter((sf) => {
+    const rel = path.relative(projectPath, sf.getFilePath());
+    if (SKIP_FILE_PATTERNS.some((pat) => pat.test(rel))) {
+      skippedFiles++;
+      return false;
+    }
+    return true;
+  });
+  const total = sourceFiles.length;
+  console.log(`\n  ┌─ ${repoName}: ${total} files (${skippedFiles} generated/dts skipped)`);
 
   const annotations: TypeAnnotation[] = [];
+  let filesProcessed = 0;
+  let lastLog = Date.now();
 
   for (const sourceFile of sourceFiles) {
     const filePath = path.relative(projectPath, sourceFile.getFilePath());
     const sourceText = sourceFile.getFullText();
-    console.log(`  Scanning: ${filePath}`);
+    const beforeCount = annotations.length;
 
-    // ── 1. Function/method parameter types ────────────────────────
-    // e.g. function handleClick(e: MouseEvent) { ... }
-    //      const handler = (event: React.ChangeEvent<HTMLInputElement>) => ...
     sourceFile.forEachDescendant((node) => {
-      // ts-morph v24 removed Node.isParameter — use SyntaxKind check
+      // Helper: push annotation only if type is short enough
+      const pushIfShort = (ann: TypeAnnotation) => {
+        if (ann.typeText.length <= MAX_TYPE_LENGTH) {
+          annotations.push(ann);
+        }
+      };
+
+      // ── 1. Parameter types ──────────────────────────────────────
       if (node.getKind() === SyntaxKind.Parameter) {
         const param = node as import("ts-morph").ParameterDeclaration;
         const typeNode = param.getTypeNode();
         if (typeNode) {
-          annotations.push({
+          pushIfShort({
             file: filePath,
             line: param.getStartLineNumber(),
             kind: "parameter",
             name: param.getName(),
             typeText: typeNode.getText(),
-            context: getContext(sourceText, param.getStartLineNumber()),
+            context: getContext(sourceText, param.getStartLineNumber(), contextRadius),
             parentName: getParentName(param),
           });
         }
       }
 
-      // ── 2. Variable declaration types ────────────────────────────
-      // e.g. const count: number = 0
-      //      const [state, setState]: [string, Dispatch<SetStateAction<string>>] = ...
+      // ── 2. Variable types ───────────────────────────────────────
       if (Node.isVariableDeclaration(node)) {
         const typeNode = node.getTypeNode();
         if (typeNode) {
-          annotations.push({
+          pushIfShort({
             file: filePath,
             line: node.getStartLineNumber(),
             kind: "variable",
             name: node.getName(),
             typeText: typeNode.getText(),
-            context: getContext(sourceText, node.getStartLineNumber()),
+            context: getContext(sourceText, node.getStartLineNumber(), contextRadius),
             parentName: getParentName(node),
           });
         }
       }
 
-      // ── 3. Function return types ─────────────────────────────────
-      // e.g. function App(): JSX.Element { ... }
-      //      const handler = (): void => { ... }
+      // ── 3. Return types ─────────────────────────────────────────
       if (
         Node.isFunctionDeclaration(node) ||
         Node.isArrowFunction(node) ||
@@ -186,141 +208,141 @@ function extractTypeAnnotations(projectPath: string): TypeAnnotation[] {
                     : "<arrow>";
                 })();
 
-          annotations.push({
+          pushIfShort({
             file: filePath,
             line: node.getStartLineNumber(),
             kind: "return_type",
             name,
             typeText: returnTypeNode.getText(),
-            context: getContext(sourceText, node.getStartLineNumber()),
+            context: getContext(sourceText, node.getStartLineNumber(), contextRadius),
             parentName: getParentName(node),
           });
         }
       }
 
-      // ── 4. Property types (interfaces, type aliases, class props) ──
-      // e.g. interface Props { onClick: (e: MouseEvent) => void }
+      // ── 4. Property types ───────────────────────────────────────
       if (Node.isPropertySignature(node) || Node.isPropertyDeclaration(node)) {
         const typeNode = node.getTypeNode();
         if (typeNode) {
-          annotations.push({
+          pushIfShort({
             file: filePath,
             line: node.getStartLineNumber(),
             kind: "property",
             name: node.getName(),
             typeText: typeNode.getText(),
-            context: getContext(sourceText, node.getStartLineNumber()),
+            context: getContext(sourceText, node.getStartLineNumber(), contextRadius),
             parentName: getParentName(node),
           });
         }
       }
 
-      // ── 5. Type assertions / "as" casts ──────────────────────────
-      // e.g. const el = document.getElementById("root") as HTMLDivElement
+      // ── 5. Type assertions (as casts) ──────────────────────────
       if (Node.isAsExpression(node)) {
         const typeNode = node.getTypeNode();
         if (typeNode) {
-          annotations.push({
+          pushIfShort({
             file: filePath,
             line: node.getStartLineNumber(),
             kind: "type_assertion",
             name: "<as_expression>",
             typeText: typeNode.getText(),
-            context: getContext(sourceText, node.getStartLineNumber()),
+            context: getContext(sourceText, node.getStartLineNumber(), contextRadius),
             parentName: getParentName(node),
           });
         }
       }
 
-      // ── 6. Generic type arguments ─────────────────────────────────
-      // e.g. useState<string>(""), useRef<HTMLDivElement>(null)
+      // ── 6. Generic type arguments ──────────────────────────────
       if (Node.isCallExpression(node)) {
         const typeArgs = node.getTypeArguments();
         if (typeArgs.length > 0) {
           const funcName = node.getExpression().getText();
           for (const typeArg of typeArgs) {
-            annotations.push({
+            pushIfShort({
               file: filePath,
               line: node.getStartLineNumber(),
               kind: "generic_argument",
               name: funcName,
               typeText: typeArg.getText(),
-              context: getContext(sourceText, node.getStartLineNumber()),
+              context: getContext(sourceText, node.getStartLineNumber(), contextRadius),
               parentName: getParentName(node),
             });
           }
         }
       }
     });
+
+    filesProcessed++;
+    const now = Date.now();
+    // Log progress every 2 seconds or on last file
+    if (now - lastLog >= 2000 || filesProcessed === total) {
+      const pct = ((filesProcessed / total) * 100).toFixed(0);
+      const elapsed = ((now - t0) / 1000).toFixed(1);
+      process.stdout.write(
+        `\r  │  ${filesProcessed}/${total} files (${pct}%) — ${annotations.length} annotations — ${elapsed}s`,
+      );
+      lastLog = now;
+    }
   }
+
+  const elapsed = ((Date.now() - t0) / 1000).toFixed(1);
+  console.log(
+    `\n  └─ ${repoName}: ${annotations.length} annotations in ${elapsed}s`,
+  );
 
   return annotations;
 }
 
 // ══════════════════════════════════════════════════════════════════════
-// CLI entry point
+// Main
 // ══════════════════════════════════════════════════════════════════════
 
 function main() {
-  const targetPath = process.argv[2] || "./samples";
-  const resolvedPath = path.resolve(targetPath);
+  const { paths, contextRadius, output } = parseArgs();
+  const outputPath = output || "extracted_types.jsonl";
+  const resolvedOutput = path.resolve(outputPath);
+  fs.mkdirSync(path.dirname(resolvedOutput), { recursive: true });
 
-  if (!fs.existsSync(resolvedPath)) {
-    console.error(`Error: path does not exist: ${resolvedPath}`);
-    process.exit(1);
+  console.log(`\n${"═".repeat(60)}`);
+  console.log(`TYPE EXTRACTOR — context ±${contextRadius} lines`);
+  console.log(`  Repos: ${paths.length} | Output: ${resolvedOutput}`);
+  console.log(`${"═".repeat(60)}`);
+
+  const allAnnotations: TypeAnnotation[] = [];
+  const t0 = Date.now();
+
+  for (let i = 0; i < paths.length; i++) {
+    const p = paths[i];
+    const resolved = path.resolve(p);
+    if (!fs.existsSync(resolved)) {
+      console.error(`  SKIP: ${resolved} does not exist`);
+      continue;
+    }
+    const repoAnnotations = extractFromProject(resolved, contextRadius);
+    allAnnotations.push(...repoAnnotations);
+
+    // Write incrementally after each repo so progress isn't lost
+    const lines = allAnnotations.map((a) => JSON.stringify(a));
+    fs.writeFileSync(resolvedOutput, lines.join("\n") + "\n", "utf-8");
+    console.log(
+      `  ✓ Saved: ${allAnnotations.length} total (${i + 1}/${paths.length} repos)`,
+    );
   }
 
-  const annotations = extractTypeAnnotations(resolvedPath);
+  const totalTime = ((Date.now() - t0) / 1000).toFixed(1);
 
-  // ── Print summary ───────────────────────────────────────────────
-  console.log(`\n${"─".repeat(60)}`);
-  console.log(`EXTRACTION SUMMARY`);
-  console.log(`${"─".repeat(60)}`);
-  console.log(`  Total annotations: ${annotations.length}`);
-
-  // Count by kind
+  // ── Summary by kind ─────────────────────────────────────────────
   const byKind = new Map<string, number>();
-  for (const a of annotations) {
+  for (const a of allAnnotations) {
     byKind.set(a.kind, (byKind.get(a.kind) || 0) + 1);
   }
+  console.log(`\n${"─".repeat(60)}`);
+  console.log(`  Total: ${allAnnotations.length} annotations in ${totalTime}s`);
   for (const [kind, count] of [...byKind.entries()].sort((a, b) => b[1] - a[1])) {
     console.log(`    ${kind.padEnd(20)} ${count}`);
   }
 
-  // Count by file
-  const byFile = new Map<string, number>();
-  for (const a of annotations) {
-    byFile.set(a.file, (byFile.get(a.file) || 0) + 1);
-  }
-  console.log(`\n  By file:`);
-  for (const [file, count] of [...byFile.entries()].sort((a, b) => b[1] - a[1])) {
-    console.log(`    ${file.padEnd(40)} ${count}`);
-  }
-
-  // ── Output as JSON lines (one per annotation) ──────────────────
-  const outputPath = path.join(resolvedPath, "..", "extracted_types.jsonl");
-  const lines = annotations.map((a) => JSON.stringify(a));
-  fs.writeFileSync(outputPath, lines.join("\n") + "\n", "utf-8");
-  console.log(`\n  Output: ${outputPath}`);
-  console.log(`  Format: JSON Lines (one annotation per line)`);
-
-  // ── Show a few examples ─────────────────────────────────────────
-  console.log(`\n${"─".repeat(60)}`);
-  console.log(`SAMPLE ANNOTATIONS (first 5)`);
-  console.log(`${"─".repeat(60)}`);
-  for (const a of annotations.slice(0, 5)) {
-    console.log(`\n  [${a.kind}] ${a.name}: ${a.typeText}`);
-    console.log(`  File: ${a.file}:${a.line}`);
-    if (a.parentName) console.log(`  Parent: ${a.parentName}`);
-    console.log(`  Context:`);
-    for (const line of a.context.split("\n")) {
-      console.log(`    ${line}`);
-    }
-  }
-
-  console.log(`\n${"═".repeat(60)}`);
-  console.log(`Done. ${annotations.length} type annotations extracted.`);
-  console.log(`${"═".repeat(60)}\n`);
+  console.log(`\n  Output: ${resolvedOutput}`);
 }
 
 main();
