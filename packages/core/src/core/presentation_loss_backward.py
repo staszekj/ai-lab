@@ -25,7 +25,7 @@ import io
 import contextlib
 
 from core.manual_transformer_block import ManualTransformerEncoderBlock
-from core.manual_transformer_loss_backward import ManualClassificationHead
+from core.manual_loss_backward import ManualClassificationHead
 
 # ══════════════════════════════════════════════════════════════════════
 # Helpers — pretty-print tensors as ASCII tables

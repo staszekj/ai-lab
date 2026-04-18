@@ -8,7 +8,17 @@ dependencies = [
 ]
 
 [project.scripts]
-test = "pytest:main"
+test                         = "pytest:main"
+presentation-mini-gpt        = "core._scripts:presentation_mini_gpt"
+presentation-transformer-block = "core._scripts:presentation_transformer_block"
+presentation-decoder-block   = "core._scripts:presentation_decoder_block"
+presentation-encoder-decoder = "core._scripts:presentation_encoder_decoder"
+presentation-loss-backward   = "core._scripts:presentation_loss_backward"
+manual-mini-gpt              = "core._scripts:manual_mini_gpt"
+manual-transformer-block     = "core._scripts:manual_transformer_block"
+manual-decoder-block         = "core._scripts:manual_decoder_block"
+manual-encoder-decoder       = "core._scripts:manual_encoder_decoder"
+manual-loss-backward         = "core._scripts:manual_loss_backward"
 
 [dependency-groups]
 dev = ["pytest>=8.0", "torch>=2.3.1"]

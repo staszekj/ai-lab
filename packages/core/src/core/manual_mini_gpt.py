@@ -704,7 +704,7 @@ def language_model_loss(
     print(f"Flat targets:  {flat_targets.shape}")
 
     # ==================================================================
-    # STEP 3 — Manual cross-entropy (same as manual_transformer_loss_backward.py)
+    # STEP 3 — Manual cross-entropy (same as manual_loss_backward.py)
     # ==================================================================
     # Numerically stable log-softmax + NLL
 
