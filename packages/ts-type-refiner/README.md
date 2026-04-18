@@ -1,4 +1,4 @@
-# typescript-type-tuner
+# ts-type-refiner
 
 Train an encoder-decoder transformer to improve TypeScript types.
 
