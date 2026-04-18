@@ -5,7 +5,7 @@ ASCII Art Presentation: Encoder-Decoder Transformer — Full Forward + Backward
 Runs a REAL forward + backward pass through ManualEncoderDecoder with tiny
 tensors so every value fits on screen.
 
-    Source: "the cat climbs a tree"  (5 tokens) — input to encoder
+    Source: "the cat climbs the tree"  (5 tokens) — input to encoder
     Target: "the dog eats a fish"    (5 tokens) — output to predict
 
     vocab_size  = 16   d_model = 6    num_heads  = 3
@@ -84,7 +84,7 @@ VOCAB_WORDS = [
 word2id = {w: i for i, w in enumerate(VOCAB_WORDS)}
 id2word  = VOCAB_WORDS
 
-SRC_SENTENCE = "the cat climbs a tree"
+SRC_SENTENCE = "the cat climbs the tree"
 TGT_SENTENCE = "the dog eats a fish"    # target we want to generate
 
 # ══════════════════════════════════════════════════════════════════════
@@ -510,41 +510,41 @@ print(f"\n    Generated: {generated_words}")
 print(f"    (Untrained — random predictions.  Train the model to get meaningful output.)")
 
 # ══════════════════════════════════════════════════════════════════════
-# STEP 7 — Training: learn ONE mapping "the cat" → "climbs a tree"
+# STEP 7 — Training: learn ONE mapping "the cat climbs" → "the tree"
 # ══════════════════════════════════════════════════════════════════════
 #
 # Mirror of presentation_mini_gpt.py STEP 11, but framed as seq2seq:
 #
 #   GPT (decoder-only):
-#     input:   "the cat climbs a tree"  (one sequence, causal mask)
-#     learns:  P(climbs | the cat)  P(a | the cat climbs) ...
+#     input:   "the cat climbs the tree"  (one sequence, causal mask)
+#     learns:  P(the | the cat climbs)  P(tree | the cat climbs the) ...
 #
 #   Encoder-Decoder:
-#     source:  "the cat"         → encoder (bidirectional)
-#     target:  "climbs a tree"   → decoder (causal + cross-attention)
-#     learns:  GIVEN "the cat",  generate "climbs a tree"
+#     source:  "the cat climbs"  → encoder (bidirectional)
+#     target:  "the tree"        → decoder (causal + cross-attention)
+#     learns:  GIVEN "the cat climbs",  generate "the tree"
 #     The task is EXPLICIT: source ≠ target, two different sequences.
 # ══════════════════════════════════════════════════════════════════════
 
-step_header("11", "Training — learn \"the cat\" → \"climbs a tree\"")
+step_header("11", "Training — learn \"the cat climbs\" → \"the tree\"")
 
-TRAIN_SRC     = "the cat"
-TRAIN_TGT     = "climbs a tree"    # what the decoder should produce
+TRAIN_SRC     = "the cat climbs"
+TRAIN_TGT     = "the tree"          # what the decoder should produce
 BOS_WORD      = "<pad>"            # reuse <pad> as BOS for this demo
 BOS_ID_TRAIN  = word2id[BOS_WORD]
 
-train_src_ids = torch.tensor([[word2id[w] for w in TRAIN_SRC.split()]])      # (1, 2)
-train_tgt_ids = torch.tensor([[word2id[w] for w in TRAIN_TGT.split()]])      # (1, 3)
+train_src_ids = torch.tensor([[word2id[w] for w in TRAIN_SRC.split()]])      # (1, 3)
+train_tgt_ids = torch.tensor([[word2id[w] for w in TRAIN_TGT.split()]])      # (1, 2)
 
 # Teacher-forcing split:
-#   decoder INPUT  = [<BOS>, "climbs", "a"]     → model sees these
-#   decoder TARGET = ["climbs", "a", "tree"]    → model predicts these
+#   decoder INPUT  = [<BOS>, "the"]   → model sees these
+#   decoder TARGET = ["the", "tree"]  → model predicts these
 train_tgt_input  = torch.cat([
     torch.tensor([[BOS_ID_TRAIN]]),
     train_tgt_ids[:, :-1],
-], dim=1)   # (1, 3): [<pad>, climbs, a]
+], dim=1)   # (1, 2): [<pad>, the]
 
-train_tgt_target = train_tgt_ids   # (1, 3): [climbs, a, tree]
+train_tgt_target = train_tgt_ids   # (1, 2): [the, tree]
 
 print(f"""
     Task framing (seq2seq):
@@ -558,13 +558,12 @@ print(f"""
         IDs: {train_tgt_target[0].tolist()}
 
     At each decoder step:
-      [<BOS>]               → predict → "climbs"
-      [<BOS>, "climbs"]     → predict → "a"
-      [<BOS>, "climbs","a"] → predict → "tree"
+      [<BOS>]        → predict → "the"
+      [<BOS>, "the"] → predict → "tree"
 
     Compare with GPT (one sequence, causal mask):
-      ["the", "cat", "climbs", "a"]  → predict → ["cat", "climbs", "a", "tree"]
-      The source tokens ("the cat") were PART of the same sequence.
+      ["the", "cat", "climbs", "the"]  → predict → ["cat", "climbs", "the", "tree"]
+      The source tokens ("the cat climbs") were PART of the same sequence.
       Here they are SEPARATED — the encoder processes them independently.
 
     Optimizer: AdamW (lr=0.01)   Steps: 200
@@ -624,26 +623,26 @@ print(f"""
 """)
 
 # ══════════════════════════════════════════════════════════════════════
-# STEP 8 — Generation: encode "the cat" once, decode autoregressively
+# STEP 8 — Generation: encode "the cat climbs" once, decode autoregressively
 # ══════════════════════════════════════════════════════════════════════
 
-step_header("12", "Generation — prompt \"the cat\" → generates \"climbs a tree\"")
+step_header("12", "Generation — prompt \"the cat climbs\" → generates \"the tree\"")
 print(f"""
     Now we use the TRAINED model in inference mode.
 
     GPT equivalent (from presentation_mini_gpt.py STEP 12):
-      Prompt:    "the cat"
-      Generated: "climbs a tree"
+      Prompt:    "the cat climbs"
+      Generated: "the tree"
       Method:    feed all tokens into one stream, causal mask
 
     Encoder-Decoder equivalent:
-      Encoder input:  "the cat"          (processed ONCE, bidirectionally)
+      Encoder input:  "the cat climbs"   (processed ONCE, bidirectionally)
       Decoder starts: [<BOS>]
-      Decoder grows:  [<BOS>] → [<BOS>, "climbs"] → [<BOS>, "climbs", "a"] → ...
+      Decoder grows:  [<BOS>] → [<BOS>, "the"] → ...
 
     The key difference: the encoder has NO causal mask. It can attend to
-    BOTH "the" and "cat" simultaneously when building representations.
-    GPT's "the" can only attend to itself, "cat" can see ["the","cat"].
+    ALL of "the", "cat", "climbs" simultaneously when building representations.
+    GPT's "the" can only attend to itself, "cat" can see ["the","cat"], etc.
 """)
 
 EOS_ID_TRAIN = word2id["tree"]   # treat "tree" as the stop signal
@@ -694,8 +693,8 @@ print(f"""
     ┌──────────────────┬──────────────────────────┬──────────────────────────┐
     │                  │  GPT (decoder-only)      │  Enc-Dec                 │
     ├──────────────────┼──────────────────────────┼──────────────────────────┤
-    │ What model sees  │ "the cat climbs a tree"  │ src: "the cat"           │
-    │                  │  (one stream)            │ tgt: "<BOS> climbs a"    │
+    │ What model sees  │ "the cat climbs the tree" │ src: "the cat climbs"    │
+    │                  │  (one stream)            │ tgt: "<BOS> the"         │
     │                  │                          │  (two separate streams)  │
     ├──────────────────┼──────────────────────────┼──────────────────────────┤
     │ "the" attends to │ only itself (causal)      │ "the" AND "cat" (bidir) │
@@ -703,8 +702,8 @@ print(f"""
     │ "climbs" attends │ "the", "cat", itself     │ via cross-attention:     │
     │ to source via    │ (same sequence, causal)  │ ALL encoder positions    │
     ├──────────────────┼──────────────────────────┼──────────────────────────┤
-    │ Prompt:          │ "the cat"                │ encoder input: "the cat" │
-    │ Generated:       │ "climbs a tree"          │ decoder output: same     │
+    │ Prompt:          │ "the cat climbs"         │ encoder input: same      │
+    │ Generated:       │ "the tree"               │ decoder output: same     │
     └──────────────────┴──────────────────────────┴──────────────────────────┘
 """)
 

@@ -93,7 +93,7 @@ VOCAB_WORDS = [
 VOCAB = len(VOCAB_WORDS)
 word2id = {w: i for i, w in enumerate(VOCAB_WORDS)}
 
-SENTENCES = ["the cat climbs a tree", "the dog eats a fish"]
+SENTENCES = ["the cat climbs the tree", "the dog eats a fish"]
 SENT_LABELS = [f'["{s}"]' for s in SENTENCES]
 WORD_LABELS = [[w for w in s.split()] for s in SENTENCES]
 

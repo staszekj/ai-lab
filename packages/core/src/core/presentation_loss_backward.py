@@ -100,7 +100,7 @@ VOCAB = len(VOCAB_WORDS)
 word2id = {w: i for i, w in enumerate(VOCAB_WORDS)}
 
 CLASS_NAMES = ["animal", "action", "food", "place"]
-SENTENCES = ["the cat climbs a tree", "the dog eats a fish"]
+SENTENCES = ["the cat climbs the tree", "the dog eats a fish"]
 SENT_LABELS = [f'"{s}"' for s in SENTENCES]
 
 # Targets: "big cat sits" → animal(0), "dog eats fish" → action(1)

@@ -5,7 +5,7 @@ ASCII Art Presentation: Transformer Decoder Block — Step by Step
 Runs a REAL forward pass through ManualDecoderBlock with tiny tensors
 so every value fits on screen.
 
-    Source:   "the cat climbs a tree"  →  encoder_output  (1, 5, 6)
+    Source:   "the cat climbs the tree"  →  encoder_output  (1, 5, 6)
     Target:   "the dog eats a"         →  decoder input   (1, 4, 6)
     Predict:  "fish"                   ←  next token
 
@@ -106,7 +106,7 @@ VOCAB_WORDS = [
 word2id = {w: i for i, w in enumerate(VOCAB_WORDS)}
 id2word  = VOCAB_WORDS
 
-SRC_SENTENCE = "the cat climbs a tree"   # processed by the encoder
+SRC_SENTENCE = "the cat climbs the tree"   # processed by the encoder
 TGT_INPUT    = "the dog eats a"          # decoder has seen this so far
 TGT_NEXT     = "fish"                    # decoder should predict this
 

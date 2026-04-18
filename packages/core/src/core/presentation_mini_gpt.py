@@ -116,7 +116,7 @@ VOCAB_WORDS = [
 id2word = VOCAB_WORDS               # id2word[i] → word
 word2id = {w: i for i, w in enumerate(VOCAB_WORDS)}
 
-SENTENCE = "the cat climbs a tree"  # our training sentence
+SENTENCE = "the cat climbs the tree"  # our training sentence
 
 
 def ids_to_words(ids):
@@ -145,7 +145,7 @@ print(f"""
 
     Architecture:
 
-        input_ids  (1, 5)         ← "the cat climbs a tree"
+        input_ids  (1, 5)         ← "the cat climbs the tree"
           │
           ├──► Token Embedding     ── lookup ──► (1, 5, 6)
           │
@@ -178,9 +178,9 @@ print(f"""
 
     GENERATION (autoregressive — word by word):
         "the cat"           → predicts → "climbs"
-        "the cat climbs"    → predicts → "a"
-        "the cat climbs a"  → predicts → "tree"
-        Result: "the cat climbs a tree" ✓
+        "the cat climbs"      → predicts → "the"
+        "the cat climbs the"  → predicts → "tree"
+        Result: "the cat climbs the tree" ✓
 
     KEY DIFFERENCE from encoder (BERT):
         GPT uses a CAUSAL MASK — each token can only attend
@@ -708,8 +708,8 @@ print(f"""
 # ══════════════════════════════════════════════════════════════════════
 
 step_header("12", "GENERATION — The Model Writes Text")
-prompt_w = SENTENCE.split()[:2]
-expect_w = SENTENCE.split()[2:]
+prompt_w = SENTENCE.split()[:3]
+expect_w = SENTENCE.split()[3:]
 print(f"""
     THIS IS THE CORE IDEA OF GPT — generating text word by word.
 
@@ -728,12 +728,12 @@ print(f"""
     Expected: \"{' '.join(expect_w)}\"
 """)
 
-prompt = input_ids[:, :2]  # "the cat"
+prompt = input_ids[:, :3]  # "the cat climbs"
 generated = prompt.clone()
 
 print(f"    Generating word by word:\n")
 
-for gen_step in range(SEQ - 2):
+for gen_step in range(SEQ - 3):
     with contextlib.redirect_stdout(io.StringIO()):
         gen_logits = model(generated, verbose=False)
 
@@ -743,7 +743,7 @@ for gen_step in range(SEQ - 2):
 
     generated = torch.cat([generated, next_token], dim=1)
 
-    expected_tok = input_ids[0, 2 + gen_step].item()
+    expected_tok = input_ids[0, 3 + gen_step].item()
     got_tok = next_token.item()
     match = "✓" if got_tok == expected_tok else "✗"
 
@@ -751,8 +751,8 @@ for gen_step in range(SEQ - 2):
     print(f"    \"{ctx}\"  → predicts → "
           f"\"{id2word[got_tok]}\"  (expected \"{id2word[expected_tok]}\")  {match}")
 
-gen_tokens = generated[0, 2:].tolist()
-exp_tokens = input_ids[0, 2:].tolist()
+gen_tokens = generated[0, 3:].tolist()
+exp_tokens = input_ids[0, 3:].tolist()
 matches = sum(g == e for g, e in zip(gen_tokens, exp_tokens))
 
 print(f"""
