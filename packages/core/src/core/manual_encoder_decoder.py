@@ -432,6 +432,10 @@ class ManualEncoderDecoder(nn.Module):
 if __name__ == "__main__":
     torch.manual_seed(42)
 
+    # ── Device selection ─────────────────────────────────────────────
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print(f"Using device: {device}")
+
     VOCAB      = 50
     MAX_SEQ    = 32
     D_MODEL    = 24
@@ -449,22 +453,22 @@ if __name__ == "__main__":
         num_heads=NUM_HEADS,
         d_ff=D_FF,
         num_layers=NUM_LAYERS,
-    )
+    ).to(device)
 
     total = sum(p.numel() for p in model.parameters())
     print(f"Total parameters: {total:,}")
 
-    src_ids = torch.randint(0, VOCAB, (BATCH, SRC_LEN))
-    tgt_ids = torch.randint(0, VOCAB, (BATCH, TGT_LEN))
+    src_ids = torch.randint(0, VOCAB, (BATCH, SRC_LEN), device=device)
+    tgt_ids = torch.randint(0, VOCAB, (BATCH, TGT_LEN), device=device)
 
     import io, contextlib
     buf = io.StringIO()
     with contextlib.redirect_stdout(buf):
         logits = model.forward(src_ids, tgt_ids, verbose=False)
 
-    print(f"src_ids:  {src_ids.shape}")
-    print(f"tgt_ids:  {tgt_ids.shape}")
-    print(f"logits:   {logits.shape}")
+    print(f"src_ids:  {src_ids.shape}  device={src_ids.device}")
+    print(f"tgt_ids:  {tgt_ids.shape}  device={tgt_ids.device}")
+    print(f"logits:   {logits.shape}  device={logits.device}")
     assert logits.shape == (BATCH, TGT_LEN, VOCAB)
     print("Shape check passed ✓")
 
