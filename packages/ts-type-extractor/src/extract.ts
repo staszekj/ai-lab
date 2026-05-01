@@ -5,8 +5,17 @@
  * with surrounding code context.
  *
  * Usage:
- *   npx tsx src/extract.ts <path...> [--context 7] [--output out.jsonl]
+ *   npx tsx src/extract.ts <path...> [--context 0] [--output out.jsonl]
  *   npx tsx src/extract.ts data/repos/radix-primitives data/repos/tanstack-query
+ *
+ * Default context radius is 0 (just the line containing the annotation).
+ * Rationale: with multi-rule training, multiple candidates on nearby
+ * lines would otherwise share identical multi-line context windows,
+ * making the prompt ambiguous (the model can't tell which `string` /
+ * `unknown` / etc. it's being asked to refine). A 1-line window forces
+ * the model to lean on the IDENTIFIER NAME as the dominant signal,
+ * which is usually present on the same line as the annotation.
+ * MUST stay in sync with refiner-locate.ts default.
  */
 
 import { Project, SyntaxKind, Node } from "ts-morph";
@@ -34,7 +43,7 @@ interface TypeAnnotation {
 function parseArgs() {
   const args = process.argv.slice(2);
   const paths: string[] = [];
-  let contextRadius = 7;
+  let contextRadius = 0;
   let output = "";
 
   for (let i = 0; i < args.length; i++) {

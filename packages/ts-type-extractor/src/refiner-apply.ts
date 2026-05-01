@@ -1,7 +1,7 @@
 /**
  * Refiner Applier
  *
- * Reads edits.jsonl (output of phase2_infer) and rewrites the
+ * Reads edits.jsonl (output of refiner-infer) and rewrites the
  * affected source files in place — replacing the byte range
  * [start, end) with `suggestion` for every edit where
  * `accepted == true`.

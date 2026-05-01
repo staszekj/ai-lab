@@ -9,7 +9,7 @@
     "degrade": "tsx src/degrade.ts",
     "refiner:locate": "tsx src/refiner-locate.ts",
     "refiner:apply": "tsx src/refiner-apply.ts",
-    "pipeline": "tsx src/extract.ts data/repos/arktype data/repos/hono data/repos/pothos data/repos/radix-primitives data/repos/react-aria data/repos/react-hook-form data/repos/react-router data/repos/tanstack-query data/repos/tanstack-router data/repos/trpc data/repos/ts-pattern data/repos/valibot data/repos/zod data/repos/zustand --context 7 --output data/extracted_types.jsonl && tsx src/degrade.ts data/extracted_types.jsonl --output data/training_pairs.jsonl"
+    "pipeline": "tsx src/extract.ts data/repos/arktype data/repos/hono data/repos/pothos data/repos/radix-primitives data/repos/react-aria data/repos/react-hook-form data/repos/react-router data/repos/tanstack-query data/repos/tanstack-router data/repos/trpc data/repos/ts-pattern data/repos/valibot data/repos/zod data/repos/zustand --context 0 --output data/extracted_types.jsonl && tsx src/degrade.ts data/extracted_types.jsonl --output data/training_pairs.jsonl"
   },
   "dependencies": {
     "ts-morph": "^24.0.0"

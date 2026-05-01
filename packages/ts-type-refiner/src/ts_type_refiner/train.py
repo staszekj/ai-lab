@@ -1,41 +1,65 @@
 """
-Phase 1 — Train ManualEncoderDecoder on real TypeScript type pairs.
+Train the EncoderDecoderModel on real TypeScript type pairs.
 
-Loads training_pairs.jsonl, builds BPE tokenizer, trains on CUDA,
-evaluates generation accuracy.
+This file is a THIN ORCHESTRATOR. It owns only the things that are
+specific to the ts-type-refiner domain:
+
+    1. Building / saving the BPE tokenizer
+    2. Building the dataset and a train/val split
+    3. Choosing model hyper-parameters from the data
+    4. Defining the eval semantics (autoregressive exact-match accuracy)
+    5. Wiring the above into `core.trainer.train(...)` and
+       `core.checkpoint.save(...)`
+
+Everything else (forward/backward, optimizer, grad-clip, log-prob,
+state_dict serialization) lives in `core` and stays domain-agnostic.
 
 Usage:
-    uv run --package ts-type-refiner phase1-train
+    uv run --package ts-type-refiner refiner-train
 """
 
-import time
+from __future__ import annotations
+
+from pathlib import Path
 
 import torch
-import torch.nn as nn
 
-from core.manual_encoder_decoder import ManualEncoderDecoder
-from ts_type_refiner.tokenizer import build_from_jsonl, TSTokenizer
+from core.checkpoint import save as save_checkpoint
+from core.encoder_decoder_model import EncoderDecoderModel
+from core.trainer import EpochStats, TrainConfig, train
+
 from ts_type_refiner.dataset import TypeRefinerDataset, train_val_split
-
-DATA_PATH = "packages/ts-type-extractor/data/training_pairs.jsonl"
-TOKENIZER_PATH = "packages/ts-type-refiner/tokenizer.json"
+from ts_type_refiner.tokenizer import build_from_jsonl
 
 
-def evaluate(
-    model: ManualEncoderDecoder,
+DATA_PATH       = "packages/ts-type-extractor/data/training_pairs.jsonl"
+TOKENIZER_PATH  = "packages/ts-type-refiner/tokenizer.json"
+CHECKPOINT_DIR  = Path("packages/ts-type-refiner/checkpoints")
+CHECKPOINT_PATH = CHECKPOINT_DIR / "refiner.pt"
+
+
+# ══════════════════════════════════════════════════════════════════════
+# Eval — autoregressive exact-match accuracy on a held-out slice
+# ──────────────────────────────────────────────────────────────────────
+# The trainer doesn't know what "good" means for our task. We define
+# it here: greedily generate a target string for each src, compare to
+# the expected target with whitespace-stripped equality.
+# ══════════════════════════════════════════════════════════════════════
+
+def evaluate_exact_match(
+    model: EncoderDecoderModel,
     dataset: TypeRefinerDataset,
     indices: list[int],
     device: torch.device,
-    max_print: int = 10,
+    max_print: int = 5,
 ) -> float:
-    """Run autoregressive generation on given indices, return exact-match accuracy."""
     model.eval()
     tok = dataset.tokenizer
     correct = 0
 
     for i, idx in enumerate(indices):
         src_text, expected_tgt = dataset.pairs[idx]
-        src_ids = tok.encode(src_text)[:dataset.max_src_len]
+        src_ids = tok.encode(src_text)[: dataset.max_src_len]
         src_tensor = torch.tensor([src_ids], device=device)
 
         generated = model.generate(
@@ -57,13 +81,14 @@ def evaluate(
             print(f"  {status} expected: {expected_tgt}")
             print(f"    got:      {gen_text}")
 
-    accuracy = correct / len(indices) if indices else 0.0
-    return accuracy
+    return correct / len(indices) if indices else 0.0
 
+
+# ══════════════════════════════════════════════════════════════════════
+# Main
+# ══════════════════════════════════════════════════════════════════════
 
 def main() -> None:
-    torch.manual_seed(42)
-
     # ── Device ────────────────────────────────────────────────────────
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Device: {device}")
@@ -79,100 +104,94 @@ def main() -> None:
     train_idx, val_idx = train_val_split(ds, val_ratio=0.15)
     print(f"  Pairs: {len(ds)}  train={len(train_idx)}  val={len(val_idx)}")
 
-    # Check sequence lengths
+    # Inspect token lengths so we can size `max_seq_len` to fit the data
+    # exactly — saves embedding-table memory vs. a generous default.
     src_lens = [len(tok.encode(ds.pairs[i][0])[:256]) for i in range(len(ds))]
-    tgt_lens = [len(tok.encode(ds.pairs[i][1])[:64]) for i in range(len(ds))]
+    tgt_lens = [len(tok.encode(ds.pairs[i][1])[:64])  for i in range(len(ds))]
     print(f"  Src tokens: min={min(src_lens)} max={max(src_lens)} avg={sum(src_lens)//len(src_lens)}")
     print(f"  Tgt tokens: min={min(tgt_lens)} max={max(tgt_lens)} avg={sum(tgt_lens)//len(tgt_lens)}")
 
     # ── Model ─────────────────────────────────────────────────────────
     max_seq = max(max(src_lens), max(tgt_lens)) + 4
-    model = ManualEncoderDecoder(
-        vocab_size=tok.vocab_size,
-        max_seq_len=max_seq,
-        d_model=256,
-        num_heads=8,
-        d_ff=1024,
-        num_layers=4,
-    ).to(device)
+    model_config = dict(
+        vocab_size  = tok.vocab_size,
+        max_seq_len = max_seq,
+        d_model     = 256,
+        num_heads   = 8,
+        d_ff        = 1024,
+        num_layers  = 4,
+    )
+    model = EncoderDecoderModel(EncoderDecoderModel.Config(**model_config)).to(device)
 
     total_params = sum(p.numel() for p in model.parameters())
-    print(f"\nModel: ManualEncoderDecoder")
+    print(f"\nModel: EncoderDecoderModel")
     print(f"  vocab={tok.vocab_size} d_model=256 heads=8 layers=4 max_seq={max_seq}")
     print(f"  Parameters: {total_params:,}")
 
-    # ── Optimizer ─────────────────────────────────────────────────────
-    lr = 3e-4
-    optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=0.01)
-    loss_fn = nn.CrossEntropyLoss(ignore_index=tok.pad_id)
+    # ── Training config ───────────────────────────────────────────────
+    train_cfg = TrainConfig(
+        epochs            = 50,
+        lr                = 3e-4,
+        weight_decay      = 0.01,
+        max_grad_norm     = 1.0,
+        eval_every        = 10,
+        log_every_batches = 25,   # heartbeat — slow GPUs need to show signs of life mid-epoch
+        seed              = 42,
+    )
+    batch_size   = 96
+    eval_samples = 200   # autoregressive eval is slow — limit per-eval cost
 
-    # ── Training ──────────────────────────────────────────────────────
-    num_epochs = 50
-    batch_size = 96
-    max_grad_norm = 1.0
-    eval_every = 10
-    eval_samples = 200  # autoregressive eval is slow, limit samples
     print(f"\n{'='*60}")
-    print(f"TRAINING — {num_epochs} epochs, batch_size={batch_size}, lr={lr}")
+    print(f"TRAINING — {train_cfg.epochs} epochs, batch_size={batch_size}, lr={train_cfg.lr}")
     print(f"{'='*60}")
 
-    best_val_acc = 0.0
-    for epoch in range(1, num_epochs + 1):
-        model.train()
-        epoch_loss = 0.0
-        epoch_correct = 0
-        epoch_total = 0
-        num_batches = 0
-        t_epoch = time.time()
+    # ── Wire callbacks for the pure-function trainer ──────────────────
+    # `train_batches` MUST be a factory: a fresh iterable every epoch
+    # so that `shuffle=True` actually re-shuffles each pass.
+    def train_batches():
+        return ds.iter_batches(batch_size, device=device, shuffle=True, indices=train_idx)
 
-        for src, tgt_in, tgt_tgt in ds.iter_batches(
-            batch_size, device=device, shuffle=True, indices=train_idx
-        ):
-            optimizer.zero_grad()
-            logits = model(src, tgt_in, verbose=False)
-            b, t, v = logits.shape
-            loss = loss_fn(logits.reshape(b * t, v), tgt_tgt.reshape(b * t))
-            loss.backward()
-            torch.nn.utils.clip_grad_norm_(model.parameters(), max_grad_norm)
-            optimizer.step()
+    def eval_fn(m: EncoderDecoderModel) -> float:
+        eval_idx = val_idx[:eval_samples]
+        acc = evaluate_exact_match(m, ds, eval_idx, device, max_print=5)
+        print(f"    → val exact-match: {acc:.1%} ({int(acc*len(eval_idx))}/{len(eval_idx)})")
+        return acc
 
-            # Accuracy
-            with torch.no_grad():
-                preds = logits.argmax(dim=-1)
-                mask = tgt_tgt != tok.pad_id
-                epoch_correct += ((preds == tgt_tgt) & mask).sum().item()
-                epoch_total += mask.sum().item()
+    # State captured across epochs by closures — no globals.
+    progress: dict = {"best_val": 0.0, "last_loss": 0.0, "last_acc": 0.0}
 
-            epoch_loss += loss.item()
-            num_batches += 1
+    def on_epoch_end(stats: EpochStats) -> None:
+        progress["last_loss"] = stats.train_loss
+        progress["last_acc"]  = stats.train_tf_acc
+        # Always print every epoch — on weak GPUs (no tensor cores) one
+        # epoch can take minutes and "every 5" is too sparse for the user
+        # to see the run is making progress.
+        print(f"  Epoch {stats.epoch:3d}/{train_cfg.epochs}  "
+              f"loss={stats.train_loss:.4f}  "
+              f"tf_acc={stats.train_tf_acc:.0%}  "
+              f"{stats.elapsed_s:.1f}s", flush=True)
+        if stats.val_metric is not None and stats.val_metric > progress["best_val"]:
+            progress["best_val"] = stats.val_metric
 
-        avg_loss = epoch_loss / num_batches
-        accuracy = epoch_correct / epoch_total if epoch_total > 0 else 0.0
-        elapsed = time.time() - t_epoch
-
-        if epoch == 1 or epoch % 5 == 0 or epoch == num_epochs:
-            print(f"  Epoch {epoch:3d}/{num_epochs}  "
-                  f"loss={avg_loss:.4f}  "
-                  f"tf_acc={accuracy:.0%}  "
-                  f"{elapsed:.1f}s")
-
-        # Periodic eval with autoregressive generation
-        if epoch % eval_every == 0 or epoch == num_epochs:
-            eval_idx = val_idx[:eval_samples]
-            val_acc = evaluate(model, ds, eval_idx, device, max_print=5)
-            print(f"    → val exact-match: {val_acc:.1%} ({int(val_acc*len(eval_idx))}/{len(eval_idx)})")
-            if val_acc > best_val_acc:
-                best_val_acc = val_acc
+    # ── Train ─────────────────────────────────────────────────────────
+    train(
+        model         = model,
+        train_batches = train_batches,
+        pad_id        = tok.pad_id,
+        cfg           = train_cfg,
+        eval_fn       = eval_fn,
+        on_epoch_end  = on_epoch_end,
+    )
 
     # ── Final evaluation ──────────────────────────────────────────────
     print(f"\n{'='*60}")
     print(f"FINAL VALIDATION — generation on {len(val_idx)} held-out pairs")
     print(f"{'='*60}")
 
-    val_acc = evaluate(model, ds, val_idx, device, max_print=15)
+    val_acc = evaluate_exact_match(model, ds, val_idx, device, max_print=15)
     print(f"\nValidation exact-match: {val_acc:.1%} ({int(val_acc*len(val_idx))}/{len(val_idx)})")
 
-    train_acc = evaluate(model, ds, train_idx[:50], device, max_print=5)
+    train_acc = evaluate_exact_match(model, ds, train_idx[:50], device, max_print=5)
     print(f"Train sample exact-match: {train_acc:.1%}")
 
     # ── Summary ───────────────────────────────────────────────────────
@@ -181,32 +200,22 @@ def main() -> None:
     print(f"{'='*60}")
     print(f"  Model:      {total_params:,} params on {device}")
     print(f"  Data:       {len(train_idx)} train / {len(val_idx)} val")
-    print(f"  Training:   {num_epochs} epochs, final loss={avg_loss:.4f}, tf_acc={accuracy:.0%}")
+    print(f"  Training:   {train_cfg.epochs} epochs, "
+          f"final loss={progress['last_loss']:.4f}, "
+          f"tf_acc={progress['last_acc']:.0%}")
     print(f"  Val exact-match:   {val_acc:.1%}")
-    print(f"  Best val:          {best_val_acc:.1%}")
+    print(f"  Best val:          {progress['best_val']:.1%}")
     print(f"  Train exact-match: {train_acc:.1%}")
 
     # ── Save checkpoint ───────────────────────────────────────────────
-    from pathlib import Path
-    ckpt_dir = Path("packages/ts-type-refiner/checkpoints")
-    ckpt_dir.mkdir(exist_ok=True)
-    ckpt_path = ckpt_dir / "phase1_model.pt"
+    save_checkpoint(
+        model,
+        CHECKPOINT_PATH,
+        model_config = model_config,
+        epoch        = train_cfg.epochs,
+        loss         = progress["last_loss"],
+        val_accuracy = val_acc,
+    )
 
-    torch.save({
-        "model_state_dict": model.state_dict(),
-        "optimizer_state_dict": optimizer.state_dict(),
-        "epoch": num_epochs,
-        "loss": avg_loss,
-        "val_accuracy": val_acc,
-        "model_config": {
-            "vocab_size": tok.vocab_size,
-            "max_seq_len": max_seq,
-            "d_model": 256,
-            "num_heads": 8,
-            "d_ff": 1024,
-            "num_layers": 4,
-        },
-    }, ckpt_path)
-
-    print(f"\n  Checkpoint saved: {ckpt_path}")
+    print(f"\n  Checkpoint saved: {CHECKPOINT_PATH}")
     print(f"  Tokenizer saved:  {TOKENIZER_PATH}")

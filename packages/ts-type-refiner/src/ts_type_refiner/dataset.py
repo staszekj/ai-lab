@@ -1,8 +1,8 @@
 """
-Data pipeline for ts-type-refiner Phase 1.
+Data pipeline for ts-type-refiner training.
 
 Loads training_pairs.jsonl → tokenized (src_ids, tgt_ids) tensors
-ready for ManualEncoderDecoder training.
+ready for EncoderDecoderModel training.
 """
 
 from __future__ import annotations

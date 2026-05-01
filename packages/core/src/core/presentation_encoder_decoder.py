@@ -14,7 +14,7 @@ ONE hard-coded training example, traced step-by-step through every layer:
 Training set size = 1.  Vocabulary size = 12.
 Every STEP below assumes this exact pair — no other examples exist.
 
-Steps in this file (matching manual_encoder_decoder.py):
+Steps in this file (matching encoder_decoder_model.py):
     STEP 1 — Tokenization & embeddings  (source side)
     STEP 2 — Encoder forward pass       (bidirectional self-attention)
     STEP 3 — Decoder forward pass       (causal self-attn + cross-attn + FFN)
@@ -154,16 +154,16 @@ print(f"""
 # Build the model
 # ══════════════════════════════════════════════════════════════════════
 
-from core.manual_encoder_decoder import ManualEncoderDecoder
+from core.encoder_decoder_model import EncoderDecoderModel
 
-model = ManualEncoderDecoder(
+model = EncoderDecoderModel(EncoderDecoderModel.Config(
     vocab_size=VOCAB,
     max_seq_len=MAX_SEQ,
     d_model=D_MODEL,
     num_heads=HEADS,
     d_ff=D_FF,
     num_layers=NUM_LAYERS,
-)
+))
 
 total_params = sum(p.numel() for p in model.parameters())
 enc_block_p  = sum(p.numel() for p in model.encoder_blocks[0].parameters())
@@ -606,14 +606,14 @@ print(f"""
 """)
 
 torch.manual_seed(42)
-train_model = ManualEncoderDecoder(
+train_model = EncoderDecoderModel(EncoderDecoderModel.Config(
     vocab_size=VOCAB,
     max_seq_len=MAX_SEQ,
     d_model=D_MODEL,
     num_heads=HEADS,
     d_ff=D_FF,
     num_layers=NUM_LAYERS,
-)
+))
 optimizer_train = torch.optim.AdamW(train_model.parameters(), lr=0.01)
 
 num_steps    = 200

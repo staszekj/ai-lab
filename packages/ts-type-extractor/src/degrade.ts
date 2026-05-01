@@ -396,7 +396,16 @@ function main() {
   const skippedTypes = new Map<string, number>();
   const appliedRules = new Map<string, number>();
 
-  for (const ann of annotations) {
+  // Heartbeat: with hundreds of thousands of annotations across many
+  // repos this loop can take a while. Print every 2s OR every 10 000
+  // annotations, whichever comes first, and show ETA based on running
+  // throughput.
+  const t0 = Date.now();
+  let lastLog = t0;
+  const total = annotations.length;
+
+  for (let i = 0; i < total; i++) {
+    const ann = annotations[i];
     const result = degradeType(ann.typeText);
     if (result) {
       // CRITICAL: Replace precise type with degraded type in context
@@ -417,7 +426,22 @@ function main() {
     } else {
       skippedTypes.set(ann.typeText, (skippedTypes.get(ann.typeText) || 0) + 1);
     }
+
+    const done = i + 1;
+    const now  = Date.now();
+    if (now - lastLog >= 2000 || done % 10_000 === 0 || done === total) {
+      const pct     = ((done / total) * 100).toFixed(1);
+      const elapsed = (now - t0) / 1000;
+      const rate    = done / Math.max(elapsed, 1e-6);
+      const etaSec  = (total - done) / Math.max(rate, 1e-6);
+      process.stdout.write(
+        `\r  ${done}/${total} (${pct}%)  pairs=${trainingPairs.length}  ` +
+        `${rate.toFixed(0)}/s  ETA ${etaSec.toFixed(1)}s   `,
+      );
+      lastLog = now;
+    }
   }
+  process.stdout.write("\n");
 
   // ── Summary ─────────────────────────────────────────────────────
   console.log(`\n${"─".repeat(60)}`);

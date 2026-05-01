@@ -1,8 +1,17 @@
 """
-Educational PyTorch: Encoder-Decoder Transformer (T5 / BART style)
+Encoder-Decoder Transformer Model (T5 / BART style)
 ====================================================================
 
-A complete, self-contained seq2seq Transformer in ONE file.
+The canonical, production reference seq2seq Transformer for the
+`core` package. Domain-agnostic: knows nothing about TypeScript,
+tokenizers, training loops, checkpoints or validators — it is a pure
+nn.Module that maps `(src_ids, tgt_in_ids) → logits` and supports
+autoregressive generation.
+
+Companion modules in `core`:
+    - core.trainer    : pure `train(model, batches, …)` function
+    - core.predictor  : `Predictor(model, encode, decode, …)` callable
+    - core.checkpoint : save / load / build_model helpers
 
 Architecture (Pre-LN variant — used by GPT-2, T5, BART, modern LLMs):
 
@@ -49,7 +58,7 @@ Key shapes (always commented inline):
     encoder_output : (batch, src_len, d_model)
     logits         : (batch, tgt_len, vocab_size)
 
-This file is the production reference implementation — it will be trained on real
+This file is the production reference implementation — it is trained on real
 degraded-types corpora on CUDA. For a hand-walked tour with a hard-coded tiny
 example (`const enabled : string` → `"ON" | "OFF"`), tiny tensors and pretty
 matrix prints, run:
@@ -60,6 +69,8 @@ In-code comments below cross-reference the STEPs in that presentation script.
 """
 
 import math
+from dataclasses import dataclass
+
 import torch
 import torch.nn as nn
 
@@ -420,7 +431,25 @@ class ManualDecoderBlock(nn.Module):
 # ENCODER-DECODER MODEL — full seq2seq Transformer
 # ══════════════════════════════════════════════════════════════════════
 
-class ManualEncoderDecoder(nn.Module):
+@dataclass
+class EncoderDecoderConfig:
+    """
+    Hyper-parameters describing the SHAPE of the model.
+
+    These six numbers fully determine `state_dict` shapes — they are
+    the ONLY thing that needs to be persisted alongside the weights
+    for a checkpoint to be reloadable. See `core.checkpoint`.
+    """
+
+    vocab_size: int = 1000
+    max_seq_len: int = 128
+    d_model: int = 256
+    num_heads: int = 4
+    d_ff: int = 1024
+    num_layers: int = 4
+
+
+class EncoderDecoderModel(nn.Module):
     """
     Complete Encoder-Decoder Transformer.
 
@@ -435,18 +464,29 @@ class ManualEncoderDecoder(nn.Module):
 
     Source and target share the same token embedding table — standard
     when both sides use the same subword tokenizer (BPE, SentencePiece).
+
+    The hyper-parameters live in a single `EncoderDecoderConfig` object
+    so callers can build identical models from a serialized dict
+    (`EncoderDecoderModel(EncoderDecoderConfig(**ckpt["model_config"]))`).
+    Also exposed as `EncoderDecoderModel.Config` for ergonomic access.
     """
 
-    def __init__(
-        self,
-        vocab_size: int = 1000,
-        max_seq_len: int = 128,
-        d_model: int = 256,
-        num_heads: int = 4,
-        d_ff: int = 1024,
-        num_layers: int = 4,
-    ) -> None:
+    Config = EncoderDecoderConfig
+
+    def __init__(self, cfg: EncoderDecoderConfig) -> None:
         super().__init__()
+
+        # Pull each hyper-parameter onto a friendlier short name.
+        # We also keep `self.cfg` so external code (checkpointing,
+        # logging) can re-serialize the exact configuration that was
+        # used to instantiate this module.
+        self.cfg         = cfg
+        vocab_size       = cfg.vocab_size
+        max_seq_len      = cfg.max_seq_len
+        d_model          = cfg.d_model
+        num_heads        = cfg.num_heads
+        d_ff             = cfg.d_ff
+        num_layers       = cfg.num_layers
 
         self.vocab_size  = vocab_size
         self.max_seq_len = max_seq_len
