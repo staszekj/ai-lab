@@ -136,7 +136,7 @@ def build_from_jsonl(jsonl_path: str | Path, vocab_size: int = 512) -> TSTokeniz
 if __name__ == "__main__":
     import sys
 
-    jsonl_path = sys.argv[1] if len(sys.argv) > 1 else "data/training_pairs.jsonl"
+    jsonl_path = sys.argv[1] if len(sys.argv) > 1 else "packages/ts-type-extractor/data/training_pairs.jsonl"
     print(f"Building BPE tokenizer from {jsonl_path}...")
 
     tok = build_from_jsonl(jsonl_path, vocab_size=512)

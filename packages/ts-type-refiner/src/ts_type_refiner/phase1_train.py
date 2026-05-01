@@ -17,7 +17,7 @@ from core.manual_encoder_decoder import ManualEncoderDecoder
 from ts_type_refiner.tokenizer import build_from_jsonl, TSTokenizer
 from ts_type_refiner.dataset import TypeRefinerDataset, train_val_split
 
-DATA_PATH = "data/training_pairs.jsonl"
+DATA_PATH = "packages/ts-type-extractor/data/training_pairs.jsonl"
 TOKENIZER_PATH = "packages/ts-type-refiner/tokenizer.json"
 
 

@@ -7,6 +7,3 @@ build/
 .eggs/
 node_modules/
 .env
-
-# Cloned source repos (training data sources)
-data/radix-primitives/

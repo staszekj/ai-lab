@@ -21,8 +21,8 @@ explicit = true
 dev = ["torch>=2.3.1"]
 
 [project.scripts]
-phase0-train = "ts_type_refiner.phase0_train:main"
 phase1-train = "ts_type_refiner.phase1_train:main"
+phase2-infer = "ts_type_refiner.phase2_infer:main"
 
 [build-system]
 requires = ["hatchling"]
