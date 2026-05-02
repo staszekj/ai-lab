@@ -1,25 +1,18 @@
 /**
  * Type Degradation — Generate Training Pairs
  *
- * Takes extracted annotations and creates training pairs by degrading
- * precise types to generic ones.  The ML model learns to reverse this.
- *
- * CRITICAL: The context is modified so the precise type is REPLACED
- * with the degraded type.  This prevents the model from "cheating"
- * by copying the answer from the surrounding code.
- *
- * Usage:
- *   npx tsx src/degrade.ts <extracted.jsonl> [--output pairs.jsonl]
+ * New ruleset derived from type-definition repositories:
+ * - TypeScript lib.dom / native browser
+ * - DefinitelyTyped React
+ * - Astro
+ * - TanStack Query/Router
  */
 
 import * as fs from "fs";
 import * as path from "path";
 
-// ══════════════════════════════════════════════════════════════════════
-// Types
-// ══════════════════════════════════════════════════════════════════════
-
 interface TypeAnnotation {
+  repo?: string;
   file: string;
   line: number;
   kind: string;
@@ -30,6 +23,7 @@ interface TypeAnnotation {
 }
 
 interface TrainingPair {
+  repo?: string;
   context: string;
   name: string;
   kind: string;
@@ -40,317 +34,356 @@ interface TrainingPair {
   line: number;
 }
 
-// ══════════════════════════════════════════════════════════════════════
-// Degradation rules
-// ══════════════════════════════════════════════════════════════════════
-
 type DegradationResult = { degraded: string; rule: string } | null;
 type DegradationRule = (typeText: string) => DegradationResult;
 
-/**
- * Match a callback/function type using balanced parentheses.
- * Returns params string and return type, or null.
- *
- *   "(event: React.MouseEvent<HTMLButtonElement>) => void"
- *    → { params: "event: React.MouseEvent<HTMLButtonElement>", returnType: "void" }
- */
-function parseCallbackType(t: string): { params: string; returnType: string } | null {
-  if (!t.startsWith("(")) return null;
-  let depth = 0;
-  let i: number;
-  for (i = 0; i < t.length; i++) {
-    if (t[i] === "(") depth++;
-    if (t[i] === ")") depth--;
-    if (depth === 0) break;
-  }
-  if (depth !== 0) return null;
-  const params = t.slice(1, i);
-  const rest = t.slice(i + 1).trim();
-  if (!rest.startsWith("=>")) return null;
-  const returnType = rest.slice(2).trim();
-  if (!returnType) return null;
-  return { params, returnType };
-}
+// Keep low-support rules in code, but mute them for current training pair generation.
+const MUTED_RULES = new Set<string>([
+  "dom_add_event_listener_options→event_listener_options",
+  "react_component_props_without_ref→any",
+  "dom_intersection_observer_init→unknown",
+  "dom_mutation_observer_init→unknown",
+  "jsx_intrinsic_keyof→string",
+  "astro_api_route→unknown",
+  "react_element_ref→any",
+  "tanstack_infinite_data→unknown",
+  "astro_infer_get_static_props_type→unknown",
+  "dom_element_internals_intersection→unknown",
+  "astro_get_static_paths→unknown",
+]);
 
 const SIMPLE_TYPES = new Set([
   "void", "boolean", "string", "number",
   "unknown", "any", "never", "undefined", "null",
 ]);
 
+const norm = (s: string): string => s.replace(/\s+/g, " ").trim();
+
+function splitUnion(t: string): string[] {
+  return t.split(/\s*\|\s*/).map((p) => p.trim()).filter(Boolean);
+}
+
+function isStringLiteral(tok: string): boolean {
+  return /^'[^']*'$/.test(tok) || /^"[^"]*"$/.test(tok);
+}
+
 const DEGRADATION_RULES: DegradationRule[] = [
-  // ── 1. React event types → React.SyntheticEvent ─────────────────
+  // React ecosystem
   (t) => {
-    if (/^React\.\w+Event(<[^>]+>)?$/.test(t) && !t.startsWith("React.SyntheticEvent")) {
+    if (/^React\.\w+EventHandler(?:<.+>)?$/.test(t) && t !== "React.EventHandler<React.SyntheticEvent>") {
+      return { degraded: "React.EventHandler<React.SyntheticEvent>", rule: "react_event_handler→generic" };
+    }
+    return null;
+  },
+  (t) => {
+    if (/^(Mouse|Keyboard|Pointer|Touch|Drag|Focus|Change|Clipboard|Composition|Animation|Transition|Form|Wheel)EventHandler(?:<.+>)?$/.test(t)) {
+      return { degraded: "React.EventHandler<React.SyntheticEvent>", rule: "react_specific_event_handler_alias→generic" };
+    }
+    return null;
+  },
+  (t) => {
+    if (/^React\.\w+Event(?:<.+>)?$/.test(t) && t !== "React.SyntheticEvent") {
       return { degraded: "React.SyntheticEvent", rule: "react_event→synthetic" };
     }
     return null;
   },
-
-  // ── 2. React event handler types ────────────────────────────────
   (t) => {
-    if (/^React\.\w+EventHandler(<[^>]+>)?$/.test(t) && !t.includes("EventHandler<React.SyntheticEvent>")) {
-      return { degraded: "React.EventHandler<React.SyntheticEvent>", rule: "react_handler→generic_handler" };
+    const m = t.match(/^React\.ComponentPropsWithRef<(.+)>$/);
+    if (m && m[1].trim() !== "any") {
+      return { degraded: "React.ComponentPropsWithRef<any>", rule: "react_component_props_with_ref→any" };
     }
     return null;
   },
-
-  // ── 3. HTML*Element → HTMLElement ───────────────────────────────
   (t) => {
-    const m = t.match(/^HTML(\w+)Element$/);
-    if (m && m[1] !== "") {
-      return { degraded: "HTMLElement", rule: "html_element→generic" };
+    const m = t.match(/^React\.ComponentPropsWithoutRef<(.+)>$/);
+    if (m && m[1].trim() !== "any") {
+      return { degraded: "React.ComponentPropsWithoutRef<any>", rule: "react_component_props_without_ref→any" };
     }
     return null;
   },
-
-  // ── 4. HTML*Element | null → HTMLElement | null ─────────────────
   (t) => {
-    const m = t.match(/^HTML(\w+)Element\s*\|\s*null$/);
-    if (m && m[1] !== "") {
-      return { degraded: "HTMLElement | null", rule: "html_element_nullable→generic" };
+    const m = t.match(/^React\.ElementRef<(.+)>$/);
+    if (m && m[1].trim() !== "any") {
+      return { degraded: "React.ElementRef<any>", rule: "react_element_ref→any" };
     }
     return null;
   },
-
-  // ── 5. SVG*Element → SVGElement ─────────────────────────────────
-  (t) => {
-    const m = t.match(/^SVG(\w+)Element$/);
-    if (m && m[1] !== "") {
-      return { degraded: "SVGElement", rule: "svg_element→generic" };
-    }
-    return null;
-  },
-
-  // ── 6. DOM native events → Event ───────────────────────────────
-  (t) => {
-    const domEvents = new Set([
-      "PointerEvent", "KeyboardEvent", "MouseEvent", "FocusEvent",
-      "TouchEvent", "WheelEvent", "DragEvent", "InputEvent",
-      "CompositionEvent", "ClipboardEvent", "AnimationEvent",
-      "TransitionEvent", "UIEvent", "CustomEvent",
-    ]);
-    if (domEvents.has(t)) {
-      return { degraded: "Event", rule: "dom_event→generic" };
-    }
-    return null;
-  },
-
-  // ── 7. React.RefObject<SpecificElement> → React.RefObject<HTMLElement>
-  (t) => {
-    const m = t.match(/^React\.RefObject<HTML(\w+)Element>$/);
-    if (m && m[1] !== "") {
-      return { degraded: "React.RefObject<HTMLElement>", rule: "ref_element→generic" };
-    }
-    return null;
-  },
-
-  // ── 8. React.MutableRefObject<HTML*Element> → React.MutableRefObject<HTMLElement>
-  (t) => {
-    const m = t.match(/^React\.MutableRefObject<HTML(\w+)Element>$/);
-    if (m && m[1] !== "") {
-      return { degraded: "React.MutableRefObject<HTMLElement>", rule: "mutable_ref_element→generic" };
-    }
-    return null;
-  },
-
-  // ── 9. React.RefObject<non-element specific> → React.RefObject<unknown>
   (t) => {
     const m = t.match(/^React\.RefObject<(.+)>$/);
-    if (m && !["HTMLElement", "unknown", "any"].includes(m[1]) && !m[1].startsWith("HTML")) {
-      return { degraded: "React.RefObject<unknown>", rule: "ref_specific→unknown" };
+    if (m && !["unknown", "any"].includes(m[1].trim())) {
+      return { degraded: "React.RefObject<unknown>", rule: "react_refobject→unknown" };
     }
     return null;
   },
-
-  // ── 10. React.MutableRefObject<non-element> → React.MutableRefObject<unknown>
   (t) => {
     const m = t.match(/^React\.MutableRefObject<(.+)>$/);
-    if (m && !["HTMLElement", "unknown", "any"].includes(m[1]) && !m[1].startsWith("HTML")) {
-      return { degraded: "React.MutableRefObject<unknown>", rule: "mutable_ref_specific→unknown" };
+    if (m && !["unknown", "any"].includes(m[1].trim())) {
+      return { degraded: "React.MutableRefObject<unknown>", rule: "react_mutable_refobject→unknown" };
+    }
+    return null;
+  },
+  (t) => {
+    const m = t.match(/^React\.Dispatch<\s*React\.SetStateAction<(.+)>\s*>$/);
+    if (m && !["unknown", "any"].includes(m[1].trim())) {
+      return {
+        degraded: "React.Dispatch<React.SetStateAction<unknown>>",
+        rule: "react_dispatch_setstateaction→unknown",
+      };
+    }
+    return null;
+  },
+  (t) => {
+    if (norm(t) === "keyof JSX.IntrinsicElements") {
+      return { degraded: "string", rule: "jsx_intrinsic_keyof→string" };
     }
     return null;
   },
 
-  // ── 11. String literal unions → string ──────────────────────────
+  // Literal / template families
   (t) => {
-    const parts = t.split(/\s*\|\s*/);
-    if (parts.length >= 2 && parts.every((p) => /^["']/.test(p.trim()))) {
+    const parts = splitUnion(t);
+    if (parts.length >= 2 && parts.every(isStringLiteral)) {
       return { degraded: "string", rule: "string_literal_union→string" };
     }
     return null;
   },
-
-  // ── 12. Numeric literal unions → number ─────────────────────────
   (t) => {
-    const parts = t.split(/\s*\|\s*/);
-    if (parts.length >= 2 && parts.every((p) => /^-?\d+(\.\d+)?$/.test(p.trim()))) {
-      return { degraded: "number", rule: "numeric_literal_union→number" };
+    if (t.includes("`") && t !== "string") {
+      return { degraded: "string", rule: "template_literal_type→string" };
     }
     return null;
   },
 
-  // ── 13. Boolean literal types → boolean ─────────────────────────
+  // Native browser + custom elements
   (t) => {
-    if (t === "true" || t === "false") {
-      return { degraded: "boolean", rule: "boolean_literal→boolean" };
+    if (/^HTML\w+Element$/.test(t) && t !== "HTMLElement") {
+      return { degraded: "HTMLElement", rule: "html_specific_element→html_element" };
+    }
+    return null;
+  },
+  (t) => {
+    if (/^HTML\w+Element\s*\|\s*null$/.test(t) && t !== "HTMLElement | null") {
+      return { degraded: "HTMLElement | null", rule: "html_specific_element_nullable→html_element_nullable" };
+    }
+    return null;
+  },
+  (t) => {
+    const m = t.match(/^CustomEvent<(.+)>$/);
+    if (m && !["unknown", "any"].includes(m[1].trim())) {
+      return { degraded: "CustomEvent<unknown>", rule: "custom_event→unknown" };
+    }
+    return null;
+  },
+  (t) => {
+    const m = t.match(/^Record<\s*string\s*,\s*(.+)\s*>$/);
+    if (m && !["unknown", "any"].includes(m[1].trim())) {
+      return { degraded: "Record<string, unknown>", rule: "record_string_value→unknown" };
+    }
+    return null;
+  },
+  (t) => {
+    const m = t.match(/^Map<\s*(.+?)\s*,\s*(.+?)\s*>$/);
+    if (m && !(m[1].trim() === "unknown" && m[2].trim() === "unknown")) {
+      return { degraded: "Map<unknown, unknown>", rule: "map→unknown" };
+    }
+    return null;
+  },
+  (t) => {
+    const m = t.match(/^Set<\s*(.+?)\s*>$/);
+    if (m && !["unknown", "any"].includes(m[1].trim())) {
+      return { degraded: "Set<unknown>", rule: "set→unknown" };
+    }
+    return null;
+  },
+  (t) => {
+    if (t === "AddEventListenerOptions") {
+      return { degraded: "EventListenerOptions", rule: "dom_add_event_listener_options→event_listener_options" };
     }
     return null;
   },
 
-  // ── 14. Mixed literal/boolean unions → string | boolean ─────────
-  //   e.g. boolean | 'indeterminate' → string | boolean
+  // Ambiguous UNKNOWN families (locator will emit multi-hypothesis)
   (t) => {
-    const parts = t.split(/\s*\|\s*/);
-    if (parts.length >= 2) {
-      const hasBoolean = parts.some((p) => p === "boolean" || p === "true" || p === "false");
-      const hasStringLiteral = parts.some((p) => /^["']/.test(p.trim()));
-      if (hasBoolean && hasStringLiteral) {
-        return { degraded: "string | boolean", rule: "mixed_literal_union→string_boolean" };
-      }
+    if (/\bextends\b/.test(t) && /\?/.test(t) && /:/.test(t)) {
+      return { degraded: "unknown", rule: "conditional_type→unknown" };
     }
     return null;
   },
-
-  // ── 15. Tuple of same type → type[] ─────────────────────────────
   (t) => {
-    const m = t.match(/^\[(\w+)(?:,\s*\1)+\]$/);
-    if (m) {
-      return { degraded: `${m[1]}[]`, rule: "tuple→array" };
+    if (/^[A-Za-z0-9_$.<>,\s]+\[[^\]]+\]$/.test(t) && !t.endsWith("[]")) {
+      return { degraded: "unknown", rule: "indexed_access_type→unknown" };
     }
     return null;
   },
-
-  // ── 16. Callback with params → (...args: any[]) => returnType ──
-  //   Uses balanced parentheses for reliable matching.
   (t) => {
-    const cb = parseCallbackType(t);
-    if (!cb) return null;
-    // Skip already-generic callbacks
-    if (cb.params.trim() === "...args: any[]") return null;
-    if (cb.params.trim() === "") return null; // handled by rule 17
-    const degradedReturn = SIMPLE_TYPES.has(cb.returnType) ? cb.returnType : "unknown";
-    return {
-      degraded: `(...args: any[]) => ${degradedReturn}`,
-      rule: "callback→generic_callback",
-    };
-  },
-
-  // ── 17. Parameterless callback with specific return → () => unknown
-  (t) => {
-    const cb = parseCallbackType(t);
-    if (!cb) return null;
-    if (cb.params.trim() !== "") return null;
-    if (SIMPLE_TYPES.has(cb.returnType)) return null; // already generic
-    return {
-      degraded: `() => unknown`,
-      rule: "callback_return→unknown",
-    };
-  },
-
-  // ── 18. React.ComponentPropsWithRef<"tag"> → React.ComponentPropsWithRef<any>
-  (t) => {
-    const m = t.match(/^React\.ComponentPropsWithRef<(.+)>$/);
-    if (m && m[1] !== "any") {
-      return { degraded: "React.ComponentPropsWithRef<any>", rule: "component_props_ref→generic" };
-    }
-    return null;
-  },
-
-  // ── 19. React.ComponentPropsWithoutRef<"tag"> → React.ComponentPropsWithoutRef<any>
-  (t) => {
-    const m = t.match(/^React\.ComponentPropsWithoutRef<(.+)>$/);
-    if (m && m[1] !== "any") {
-      return { degraded: "React.ComponentPropsWithoutRef<any>", rule: "component_props→generic" };
-    }
-    return null;
-  },
-
-  // ── 20. React.ElementRef<"tag"> → React.ElementRef<any> ────────
-  (t) => {
-    const m = t.match(/^React\.ElementRef<(.+)>$/);
-    if (m && m[1] !== "any") {
-      return { degraded: "React.ElementRef<any>", rule: "element_ref→generic" };
-    }
-    return null;
-  },
-
-  // ── 21. DOMRect / DataTransfer / Selection → object ─────────────
-  (t) => {
-    const domObjects = new Set(["DOMRect", "DataTransfer", "Selection", "DOMRectReadOnly", "CSSStyleDeclaration"]);
-    if (domObjects.has(t)) {
-      return { degraded: "object", rule: "dom_object→object" };
-    }
-    return null;
-  },
-
-  // ── 22. ReturnType<typeof X> → unknown ──────────────────────────
-  (t) => {
-    if (t.startsWith("ReturnType<")) {
-      return { degraded: "unknown", rule: "returntype→unknown" };
-    }
-    return null;
-  },
-
-  // ── 23. Extract<...> / Exclude<...> / Omit<...> / Pick<...> → unknown
-  (t) => {
-    if (/^(Extract|Exclude|Omit|Pick)</.test(t)) {
+    if (/^(Extract|Exclude|Pick|Omit|Partial|Required|Readonly|NonNullable|Parameters|ReturnType|InstanceType|Awaited)</.test(t)) {
       return { degraded: "unknown", rule: "utility_type→unknown" };
     }
     return null;
   },
-
-  // ── 24. Record<string, SpecificType> → Record<string, unknown> ─
   (t) => {
-    const m = t.match(/^Record<string,\s*(.+)>$/);
-    if (m && m[1] !== "unknown" && m[1] !== "any") {
-      return { degraded: "Record<string, unknown>", rule: "record→generic" };
+    if (t === "MutationObserverInit") {
+      return { degraded: "unknown", rule: "dom_mutation_observer_init→unknown" };
+    }
+    return null;
+  },
+  (t) => {
+    if (t === "IntersectionObserverInit") {
+      return { degraded: "unknown", rule: "dom_intersection_observer_init→unknown" };
+    }
+    return null;
+  },
+  (t) => {
+    if (t === "ShadowRootInit") {
+      return { degraded: "unknown", rule: "dom_shadow_root_init→unknown" };
+    }
+    return null;
+  },
+  (t) => {
+    if (t === "CSSStyleDeclaration") {
+      return { degraded: "unknown", rule: "dom_css_style_declaration→unknown" };
+    }
+    return null;
+  },
+  (t) => {
+    if (/^ElementInternals\s*&\s*.+$/.test(t)) {
+      return { degraded: "unknown", rule: "dom_element_internals_intersection→unknown" };
     }
     return null;
   },
 
-  // ── 25. Promise<SpecificType> → Promise<unknown> ───────────────
+  // Generic wrappers from type-defs
   (t) => {
     const m = t.match(/^Promise<(.+)>$/);
-    if (m && !SIMPLE_TYPES.has(m[1]) && m[1] !== "Response") {
-      return { degraded: "Promise<unknown>", rule: "promise→generic" };
+    if (m && !SIMPLE_TYPES.has(m[1].trim())) {
+      return { degraded: "Promise<unknown>", rule: "promise→unknown" };
+    }
+    return null;
+  },
+  (t) => {
+    const m = t.match(/^ReadonlyArray<(.+)>$/);
+    if (m && !["unknown", "any"].includes(m[1].trim())) {
+      return { degraded: "ReadonlyArray<unknown>", rule: "readonly_array→unknown" };
+    }
+    return null;
+  },
+  (t) => {
+    const m = t.match(/^UseQueryResult<\s*(.+?)\s*,\s*(.+?)\s*>$/);
+    if (m && !(m[1].trim() === "unknown" && m[2].trim() === "unknown")) {
+      return { degraded: "UseQueryResult<unknown, unknown>", rule: "tanstack_use_query_result→unknown" };
+    }
+    return null;
+  },
+  (t) => {
+    const m = t.match(/^UseInfiniteQueryResult<\s*(.+?)\s*,\s*(.+?)\s*>$/);
+    if (m && !(m[1].trim() === "unknown" && m[2].trim() === "unknown")) {
+      return {
+        degraded: "UseInfiniteQueryResult<unknown, unknown>",
+        rule: "tanstack_use_infinite_query_result→unknown",
+      };
+    }
+    return null;
+  },
+  (t) => {
+    const m = t.match(/^QueryObserverResult<\s*(.+?)\s*,\s*(.+?)\s*>$/);
+    if (m && !(m[1].trim() === "unknown" && m[2].trim() === "unknown")) {
+      return {
+        degraded: "QueryObserverResult<unknown, unknown>",
+        rule: "tanstack_query_observer_result→unknown",
+      };
+    }
+    return null;
+  },
+  (t) => {
+    const m = t.match(/^InfiniteData<\s*(.+?)(?:\s*,\s*(.+?)\s*)?>$/);
+    if (!m) return null;
+    const a = m[1].trim();
+    const b = m[2]?.trim();
+    if (a === "unknown" && (!b || b === "unknown")) return null;
+    return {
+      degraded: "InfiniteData<unknown, unknown>",
+      rule: "tanstack_infinite_data→unknown",
+    };
+  },
+  (t) => {
+    const m = t.match(/^InfiniteQueryObserverResult<\s*(.+?)\s*,\s*(.+?)\s*>$/);
+    if (m && !(m[1].trim() === "unknown" && m[2].trim() === "unknown")) {
+      return {
+        degraded: "InfiniteQueryObserverResult<unknown, unknown>",
+        rule: "tanstack_infinite_query_observer_result→unknown",
+      };
+    }
+    return null;
+  },
+  (t) => {
+    const m = t.match(/^QueryFunctionContext<\s*(.+)\s*>$/);
+    if (m && m[1].trim() !== "unknown") {
+      return {
+        degraded: "QueryFunctionContext<unknown>",
+        rule: "tanstack_query_function_context→unknown",
+      };
     }
     return null;
   },
 
-  // ── 26. Map<K, V> → Map<unknown, unknown> ──────────────────────
+  // Astro
   (t) => {
-    const m = t.match(/^Map<(.+),\s*(.+)>$/);
-    if (m) {
-      return { degraded: "Map<unknown, unknown>", rule: "map→generic" };
+    const m = t.match(/^InferGetStaticPropsType<(.+)>$/);
+    if (m && m[1].trim() !== "unknown") {
+      return {
+        degraded: "InferGetStaticPropsType<unknown>",
+        rule: "astro_infer_get_static_props_type→unknown",
+      };
     }
     return null;
   },
-
-  // ── 27. Set<T> → Set<unknown> ──────────────────────────────────
   (t) => {
-    const m = t.match(/^Set<(.+)>$/);
-    if (m && !SIMPLE_TYPES.has(m[1])) {
-      return { degraded: "Set<unknown>", rule: "set→generic" };
+    const m = t.match(/^InferGetStaticPathsType<(.+)>$/);
+    if (m && m[1].trim() !== "unknown") {
+      return {
+        degraded: "InferGetStaticPathsType<unknown>",
+        rule: "astro_infer_get_static_paths_type→unknown",
+      };
+    }
+    return null;
+  },
+  (t) => {
+    if (t === "APIRoute") {
+      return {
+        degraded: "unknown",
+        rule: "astro_api_route→unknown",
+      };
+    }
+    return null;
+  },
+  (t) => {
+    if (t === "GetStaticPaths") {
+      return {
+        degraded: "unknown",
+        rule: "astro_get_static_paths→unknown",
+      };
+    }
+    return null;
+  },
+  (t) => {
+    const m = t.match(/^CollectionEntry<(.+)>$/);
+    if (m && m[1].trim() !== "any") {
+      return { degraded: "CollectionEntry<any>", rule: "astro_collection_entry→any" };
     }
     return null;
   },
 ];
 
-// ══════════════════════════════════════════════════════════════════════
-// Apply degradation
-// ══════════════════════════════════════════════════════════════════════
-
 function degradeType(typeText: string): DegradationResult {
+  const t = norm(typeText);
   for (const rule of DEGRADATION_RULES) {
-    const result = rule(typeText);
-    if (result) return result;
+    const result = rule(t);
+    if (!result) continue;
+    if (MUTED_RULES.has(result.rule)) continue;
+    return result;
   }
   return null;
 }
-
-// ══════════════════════════════════════════════════════════════════════
-// CLI
-// ══════════════════════════════════════════════════════════════════════
 
 function parseArgs() {
   const args = process.argv.slice(2);
@@ -369,10 +402,6 @@ function parseArgs() {
   return { input, output };
 }
 
-// ══════════════════════════════════════════════════════════════════════
-// Main
-// ══════════════════════════════════════════════════════════════════════
-
 function main() {
   const { input, output } = parseArgs();
   const inputPath = path.resolve(input || "extracted_types.jsonl");
@@ -388,7 +417,7 @@ function main() {
   console.log(`  Input: ${inputPath}\n`);
 
   const lines = fs.readFileSync(inputPath, "utf-8").trim().split("\n");
-  const annotations: TypeAnnotation[] = lines.map((l) => JSON.parse(l));
+  const annotations: TypeAnnotation[] = lines.map((l: string) => JSON.parse(l));
 
   console.log(`  Total annotations: ${annotations.length}`);
 
@@ -396,10 +425,6 @@ function main() {
   const skippedTypes = new Map<string, number>();
   const appliedRules = new Map<string, number>();
 
-  // Heartbeat: with hundreds of thousands of annotations across many
-  // repos this loop can take a while. Print every 2s OR every 10 000
-  // annotations, whichever comes first, and show ETA based on running
-  // throughput.
   const t0 = Date.now();
   let lastLog = t0;
   const total = annotations.length;
@@ -408,11 +433,10 @@ function main() {
     const ann = annotations[i];
     const result = degradeType(ann.typeText);
     if (result) {
-      // CRITICAL: Replace precise type with degraded type in context
-      // so the model can't copy the answer from surrounding code.
       const modifiedContext = ann.context.split(ann.typeText).join(result.degraded);
 
       trainingPairs.push({
+        repo: ann.repo,
         context: modifiedContext,
         name: ann.name,
         kind: ann.kind,
@@ -428,34 +452,30 @@ function main() {
     }
 
     const done = i + 1;
-    const now  = Date.now();
+    const now = Date.now();
     if (now - lastLog >= 2000 || done % 10_000 === 0 || done === total) {
-      const pct     = ((done / total) * 100).toFixed(1);
+      const pct = ((done / total) * 100).toFixed(1);
       const elapsed = (now - t0) / 1000;
-      const rate    = done / Math.max(elapsed, 1e-6);
-      const etaSec  = (total - done) / Math.max(rate, 1e-6);
+      const rate = done / Math.max(elapsed, 1e-6);
+      const etaSec = (total - done) / Math.max(rate, 1e-6);
       process.stdout.write(
-        `\r  ${done}/${total} (${pct}%)  pairs=${trainingPairs.length}  ` +
-        `${rate.toFixed(0)}/s  ETA ${etaSec.toFixed(1)}s   `,
+        `\r  ${done}/${total} (${pct}%)  pairs=${trainingPairs.length}  ${rate.toFixed(0)}/s  ETA ${etaSec.toFixed(1)}s   `,
       );
       lastLog = now;
     }
   }
   process.stdout.write("\n");
 
-  // ── Summary ─────────────────────────────────────────────────────
   console.log(`\n${"─".repeat(60)}`);
   console.log(`DEGRADATION SUMMARY`);
   console.log(`${"─".repeat(60)}`);
   console.log(`  Training pairs generated: ${trainingPairs.length}`);
   console.log(`  Annotations skipped:      ${annotations.length - trainingPairs.length}`);
-  console.log(
-    `  Conversion rate:          ${((trainingPairs.length / annotations.length) * 100).toFixed(1)}%`,
-  );
+  console.log(`  Conversion rate:          ${((trainingPairs.length / annotations.length) * 100).toFixed(1)}%`);
 
   console.log(`\n  Rules applied:`);
   for (const [rule, count] of [...appliedRules.entries()].sort((a, b) => b[1] - a[1])) {
-    console.log(`    ${rule.padEnd(45)} ${count}`);
+    console.log(`    ${rule.padEnd(55)} ${count}`);
   }
 
   console.log(`\n  Top 30 skipped types:`);
@@ -464,7 +484,6 @@ function main() {
     console.log(`    ${count.toString().padStart(4)}  ${type}`);
   }
 
-  // ── Output ──────────────────────────────────────────────────────
   const outputPath = output
     ? path.resolve(output)
     : path.join(path.dirname(inputPath), "training_pairs.jsonl");

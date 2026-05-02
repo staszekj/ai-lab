@@ -9,7 +9,16 @@
     "degrade": "tsx src/degrade.ts",
     "refiner:locate": "tsx src/refiner-locate.ts",
     "refiner:apply": "tsx src/refiner-apply.ts",
-    "pipeline": "tsx src/extract.ts data/repos/arktype data/repos/hono data/repos/pothos data/repos/radix-primitives data/repos/react-aria data/repos/react-hook-form data/repos/react-router data/repos/tanstack-query data/repos/tanstack-router data/repos/trpc data/repos/ts-pattern data/repos/valibot data/repos/zod data/repos/zustand --context 0 --output data/extracted_types.jsonl && tsx src/degrade.ts data/extracted_types.jsonl --output data/training_pairs.jsonl"
+    "repos:fetch": "tsx src/fetch-repos.ts --group all",
+    "repos:fetch:type-defs": "tsx src/fetch-repos.ts --group type-defs",
+    "repos:fetch:usage": "tsx src/fetch-repos.ts --group usage",
+    "report:coverage:type-defs": "tsx src/rule-coverage-report.ts --label type-defs --extracted data/extracted_type-defs.jsonl --pairs data/training_pairs_type-defs.jsonl",
+    "report:coverage:usage": "tsx src/rule-coverage-report.ts --label usage --extracted data/extracted_usage.jsonl --pairs data/training_pairs_usage.jsonl",
+    "report:repos:usage": "tsx src/repo-contribution-report.ts --label usage --extracted data/extracted_usage.jsonl --pairs data/training_pairs_usage.jsonl",
+    "pipeline": "tsx src/pipeline-group.ts --group usage",
+    "pipeline:usage": "tsx src/pipeline-group.ts --group usage",
+    "pipeline:type-defs": "tsx src/pipeline-group.ts --group type-defs",
+    "pipeline:all": "npm run pipeline:type-defs && npm run pipeline:usage"
   },
   "dependencies": {
     "ts-morph": "^24.0.0"

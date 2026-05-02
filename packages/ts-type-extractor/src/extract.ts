@@ -5,7 +5,7 @@
  * with surrounding code context.
  *
  * Usage:
- *   npx tsx src/extract.ts <path...> [--context 0] [--output out.jsonl]
+ *   npx tsx src/extract.ts <path...> [--context 0] [--output out.jsonl] [--include-dts]
  *   npx tsx src/extract.ts data/repos/radix-primitives data/repos/tanstack-query
  *
  * Default context radius is 0 (just the line containing the annotation).
@@ -27,6 +27,7 @@ import * as fs from "fs";
 // ══════════════════════════════════════════════════════════════════════
 
 interface TypeAnnotation {
+  repo: string;
   file: string;
   line: number;
   kind: string;
@@ -45,6 +46,7 @@ function parseArgs() {
   const paths: string[] = [];
   let contextRadius = 0;
   let output = "";
+  let includeDts = false;
 
   for (let i = 0; i < args.length; i++) {
     if (args[i] === "--context" && args[i + 1]) {
@@ -53,13 +55,15 @@ function parseArgs() {
     } else if (args[i] === "--output" && args[i + 1]) {
       output = args[i + 1];
       i++;
+    } else if (args[i] === "--include-dts") {
+      includeDts = true;
     } else {
       paths.push(args[i]);
     }
   }
 
   if (paths.length === 0) paths.push("./samples");
-  return { paths, contextRadius, output };
+  return { paths, contextRadius, output, includeDts };
 }
 
 // ══════════════════════════════════════════════════════════════════════
@@ -114,8 +118,7 @@ const SKIP_FILE_PATTERNS = [
   /\.generated\./,
   /generated\//,
   /\.gen\.ts/,
-  /__generated__/,
-  /\.d\.ts$/,
+  /__generated__/
 ];
 
 // Max type annotation length in characters.
@@ -125,6 +128,7 @@ const MAX_TYPE_LENGTH = 200;
 function extractFromProject(
   projectPath: string,
   contextRadius: number,
+  includeDts: boolean,
 ): TypeAnnotation[] {
   const repoName = path.basename(projectPath);
   const t0 = Date.now();
@@ -140,6 +144,10 @@ function extractFromProject(
   let skippedFiles = 0;
   const sourceFiles = allFiles.filter((sf) => {
     const rel = path.relative(projectPath, sf.getFilePath());
+    if (!includeDts && rel.endsWith(".d.ts")) {
+      skippedFiles++;
+      return false;
+    }
     if (SKIP_FILE_PATTERNS.some((pat) => pat.test(rel))) {
       skippedFiles++;
       return false;
@@ -172,6 +180,7 @@ function extractFromProject(
         const typeNode = param.getTypeNode();
         if (typeNode) {
           pushIfShort({
+            repo: repoName,
             file: filePath,
             line: param.getStartLineNumber(),
             kind: "parameter",
@@ -188,6 +197,7 @@ function extractFromProject(
         const typeNode = node.getTypeNode();
         if (typeNode) {
           pushIfShort({
+            repo: repoName,
             file: filePath,
             line: node.getStartLineNumber(),
             kind: "variable",
@@ -218,6 +228,7 @@ function extractFromProject(
                 })();
 
           pushIfShort({
+            repo: repoName,
             file: filePath,
             line: node.getStartLineNumber(),
             kind: "return_type",
@@ -234,6 +245,7 @@ function extractFromProject(
         const typeNode = node.getTypeNode();
         if (typeNode) {
           pushIfShort({
+            repo: repoName,
             file: filePath,
             line: node.getStartLineNumber(),
             kind: "property",
@@ -250,6 +262,7 @@ function extractFromProject(
         const typeNode = node.getTypeNode();
         if (typeNode) {
           pushIfShort({
+            repo: repoName,
             file: filePath,
             line: node.getStartLineNumber(),
             kind: "type_assertion",
@@ -268,6 +281,7 @@ function extractFromProject(
           const funcName = node.getExpression().getText();
           for (const typeArg of typeArgs) {
             pushIfShort({
+              repo: repoName,
               file: filePath,
               line: node.getStartLineNumber(),
               kind: "generic_argument",
@@ -307,13 +321,14 @@ function extractFromProject(
 // ══════════════════════════════════════════════════════════════════════
 
 function main() {
-  const { paths, contextRadius, output } = parseArgs();
+  const { paths, contextRadius, output, includeDts } = parseArgs();
   const outputPath = output || "extracted_types.jsonl";
   const resolvedOutput = path.resolve(outputPath);
   fs.mkdirSync(path.dirname(resolvedOutput), { recursive: true });
 
   console.log(`\n${"═".repeat(60)}`);
   console.log(`TYPE EXTRACTOR — context ±${contextRadius} lines`);
+  console.log(`  Include .d.ts: ${includeDts ? "yes" : "no"}`);
   console.log(`  Repos: ${paths.length} | Output: ${resolvedOutput}`);
   console.log(`${"═".repeat(60)}`);
 
@@ -327,7 +342,7 @@ function main() {
       console.error(`  SKIP: ${resolved} does not exist`);
       continue;
     }
-    const repoAnnotations = extractFromProject(resolved, contextRadius);
+    const repoAnnotations = extractFromProject(resolved, contextRadius, includeDts);
     allAnnotations.push(...repoAnnotations);
 
     // Write incrementally after each repo so progress isn't lost

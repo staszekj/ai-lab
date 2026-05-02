@@ -27,6 +27,8 @@ from tokenizers.pre_tokenizers import ByteLevel
 from tokenizers.decoders import ByteLevel as ByteLevelDecoder
 from tokenizers.processors import TemplateProcessing
 
+from ts_type_refiner.prompt import build_refine_prompt
+
 
 # ── Special tokens ───────────────────────────────────────────────────
 PAD_TOKEN = "<pad>"
@@ -126,7 +128,17 @@ def build_from_jsonl(jsonl_path: str | Path, vocab_size: int = 512) -> TSTokeniz
     with open(jsonl_path) as f:
         for line in f:
             row = json.loads(line)
-            texts.append(row["context"])
+            texts.append(
+                build_refine_prompt(
+                    context=row["context"],
+                    name=row.get("name", "<unknown>"),
+                    kind=row.get("kind", "<unknown>"),
+                    rule=row.get("rule", "<unknown>"),
+                    degraded_type=row.get("degradedType", "<unknown>"),
+                    file=row.get("file"),
+                    line=row.get("line"),
+                )
+            )
             texts.append(row["preciseType"])
             texts.append(row["degradedType"])
 

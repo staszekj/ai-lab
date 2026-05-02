@@ -13,6 +13,7 @@ from pathlib import Path
 
 import torch
 
+from ts_type_refiner.prompt import build_refine_prompt
 from ts_type_refiner.tokenizer import TSTokenizer
 
 
@@ -42,7 +43,16 @@ class TypeRefinerDataset:
         with open(jsonl_path) as f:
             for line in f:
                 row = json.loads(line)
-                self.pairs.append((row["context"], row["preciseType"]))
+                src_prompt = build_refine_prompt(
+                    context=row["context"],
+                    name=row.get("name", "<unknown>"),
+                    kind=row.get("kind", "<unknown>"),
+                    rule=row.get("rule", "<unknown>"),
+                    degraded_type=row.get("degradedType", "<unknown>"),
+                    file=row.get("file"),
+                    line=row.get("line"),
+                )
+                self.pairs.append((src_prompt, row["preciseType"]))
 
     def __len__(self) -> int:
         return len(self.pairs)
