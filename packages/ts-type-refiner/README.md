@@ -114,32 +114,18 @@ refiner-locate.ts ──► candidates.jsonl ──► refiner-infer ──► e
                                                   └── uses refiner.pt + tokenizer.json + VALIDATORS
 ```
 
-Trójkąt synchroniczny: the rule names in `degrade.ts`, `refiner-locate.ts`
+Synchronization triangle: the rule names in `degrade.ts`, `refiner-locate.ts`
 and `validators.py` MUST stay aligned — the model only knows the rules it
 was trained on.
 
 ---
 
-## Dziennik zmian (2026-05-02)
+## Current State
 
-### 1) Prompty treningowe/inferencyjne z metadanymi
-
-- Dodano `ts_type_refiner.prompt.build_refine_prompt`.
-- Trening (`dataset.py`, `tokenizer.py`) i inferencja (`infer.py`) używają teraz
-    tego samego formatu promptu z metadanymi:
-    - `rule`, `kind`, `name`, `degradedType`, opcjonalnie `file`, `line`.
-- Cel: lepsze rozróżnianie niejednoznacznych przypadków (np. wiele kandydatów
-    z tym samym literalem `unknown`/`string`).
-
-### 2) Obsługa wielu hipotez dla jednego miejsca w kodzie
-
-- `infer.py` scala kandydatów o tym samym `id` i wybiera najlepszy rekord
-    (priorytet: `accepted`, następnie wyższy `logprob`).
-- Dzięki temu wyjście jest stabilniejsze dla wielohipotezowego locatora.
-
-### 3) Wyciszenie reguł DROP-FOR-NOW po stronie validatorów
-
-- Funkcje validatorów pozostają w kodzie (`ALL_VALIDATORS`), ale aktywny
-    słownik `VALIDATORS` jest filtrowany przez `MUTED_RULES`.
-- To synchronizuje zachowanie z extractor/locator: wyciszone reguły nie są
-    używane operacyjnie, ale są gotowe do odblokowania w przyszłości.
+- Training and inference both use a shared prompt builder with metadata
+    (`rule`, `kind`, `name`, `degradedType`, optional file/line).
+- Inference evaluates candidates per rule hypothesis and merges results per
+    candidate id using validator pass + log-probability ranking.
+- Validator routing is synchronized with extractor/locator rule names.
+- Low-support rules remain implemented but currently muted from active
+    validator routing via `MUTED_RULES`.

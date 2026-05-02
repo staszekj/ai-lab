@@ -165,54 +165,18 @@ shapes.
    `packages/ts-type-refiner/src/ts_type_refiner/validators.py`.
 5. Retrain the model (`refiner-train`).
 
-All four steps are required. Skipping any one breaks the trójkąt synchroniczny.
+All four steps are required. Skipping any one breaks the synchronization triangle.
 
 ---
 
-## Dziennik zmian (2026-05-02)
+## Current State
 
-### 1) Przebudowa źródeł danych
-
-- Wprowadzono dwa niezależne zbiory repozytoriów:
-   - `type-defs` (źródła definicji typów do projektowania reguł),
-   - `usage` (repozytoria użycia do budowy par treningowych).
-- Dodano manifest i grupowanie źródeł:
-   - `src/repo-manifest.ts`
-   - `src/repo-groups.ts`
-- Dodano narzędzia do fetch/pipeline per grupa:
-   - `src/fetch-repos.ts`
-   - `src/pipeline-group.ts`
-
-### 2) Rozszerzenie zakresu typów i reguł
-
-- Rozszerzono źródła `type-defs` o kolejne ekosystemy/browserowe definicje
-   (React DOM, Astro language-tools, TypeScript DOM lib generator, Lit, FAST).
-- Rozszerzono reguły degradacji i ich odpowiedniki locator/validator dla:
-   - React,
-   - TanStack,
-   - Astro,
-   - natywnych typów browser/custom-elements.
-- Locator emituje wielohipotezowo kandydatów dla niejednoznacznych kształtów
-   (szczególnie `unknown`).
-
-### 3) Śledzenie pochodzenia i raportowanie
-
-- Dodano propagację pola `repo` do rekordów extract/degrade.
-- Dodano raport wkładu repozytoriów:
-   - `src/repo-contribution-report.ts`
-   - skrypt npm: `report:repos:usage`
-- Dodano raport pokrycia reguł:
-   - `src/rule-coverage-report.ts`
-   - skrypty npm: `report:coverage:type-defs`, `report:coverage:usage`
-
-### 4) Wyciszenie reguł DROP-FOR-NOW (bez usuwania ich z kodu)
-
-- Reguły o niskim wsparciu zostały zachowane w implementacji, ale są obecnie
-   wyciszone dla treningu i inferencji, aby model nie był oceniany na regułach,
-   których nie trenowaliśmy w tej iteracji.
-- Stan wyciszenia:
-   - `degrade.ts`: reguły wyciszone nie tworzą par treningowych,
-   - `refiner-locate.ts`: reguły wyciszone nie emitują kandydatów,
-   - `ts-type-refiner/validators.py`: reguły wyciszone nie trafiają do aktywnego
-      `VALIDATORS`.
-- Reguły pozostają w kodzie i można je łatwo odciszyć w kolejnej iteracji.
+- Source repositories are managed as two groups: `type-defs` (rule discovery)
+  and `usage` (training pair generation).
+- The extractor/degrader pipeline is group-aware (`pipeline:type-defs`,
+  `pipeline:usage`, `pipeline:all`) and supports coverage/contribution reports.
+- Rule metadata includes `repo` provenance in generated JSONL artifacts.
+- Ambiguous degraded literals (notably `unknown` and `string`) are handled via
+  multi-hypothesis candidate emission in locator.
+- Low-support rules are preserved in code but currently muted in active
+  training/inference flow (degrader, locator, and refiner validators).
