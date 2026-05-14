@@ -1,0 +1,5 @@
+[project]
+name = "refiner-playground"
+version = "0.1.0"
+description = "End-to-end playground for the trained ts-type-refiner model"
+requires-python = ">=3.12"

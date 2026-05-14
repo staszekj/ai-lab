@@ -1,0 +1,32 @@
+{
+  "name": "ts-type-extractor",
+  "version": "0.1.0",
+  "description": "Extract TypeScript type annotations from React codebases for ML training data",
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "extract": "tsx src/extract.ts",
+    "degrade": "tsx src/degrade.ts",
+    "materialize": "tsx src/materialize-pairs.ts",
+    "refiner:locate": "tsx src/refiner-locate.ts",
+    "refiner:apply": "tsx src/refiner-apply.ts",
+    "repos:fetch": "tsx src/fetch-repos.ts --group all",
+    "repos:fetch:type-defs": "tsx src/fetch-repos.ts --group type-defs",
+    "repos:fetch:usage": "tsx src/fetch-repos.ts --group usage",
+    "report:coverage:type-defs": "tsx src/rule-coverage-report.ts --label type-defs --extracted data/extracted_type-defs.jsonl --pairs data/training_pairs.jsonl",
+    "report:coverage:usage": "tsx src/rule-coverage-report.ts --label usage --extracted data/extracted_usage.jsonl --pairs data/training_pairs.jsonl",
+    "report:repos:usage": "tsx src/repo-contribution-report.ts --label usage --extracted data/extracted_usage.jsonl --pairs data/training_pairs.jsonl",
+    "pipeline": "tsx src/pipeline-group.ts --group usage",
+    "pipeline:usage": "tsx src/pipeline-group.ts --group usage",
+    "pipeline:type-defs": "tsx src/pipeline-group.ts --group type-defs",
+    "pipeline:all": "npm run pipeline:type-defs && npm run pipeline:usage"
+  },
+  "dependencies": {
+    "ts-morph": "^24.0.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.0",
+    "tsx": "^4.19.0",
+    "@types/node": "^22.0.0"
+  }
+}

@@ -1,0 +1,6 @@
+node_modules/
+dist/
+
+# Generated/training artifacts — too large (~6 GB) to push.
+# Includes cloned source repos and every extracted/degraded/materialized JSONL.
+data/
