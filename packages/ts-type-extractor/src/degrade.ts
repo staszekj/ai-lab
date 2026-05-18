@@ -10,6 +10,9 @@
 
 import * as fs from "fs";
 import * as path from "path";
+import * as crypto from "crypto";
+import { applyContainingBoost } from "./siblings.js";
+import { collectNegatives } from "./negatives.js";
 
 interface TypeAnnotation {
   repo?: string;
@@ -19,23 +22,69 @@ interface TypeAnnotation {
   name: string;
   typeText: string;
   context: string;
-  parentName: string | null;
-  ast?: string;
+  /** Offsets of `typeText` within `context` (Step 1.3, optional for back-compat). */
+  typeStart?: number;
+  typeEnd?: number;
   siblings?: string;
+  containingDecl?: string | null;
 }
 
+/**
+ * Enriched encoder/decoder training pair.
+ *
+ * - `input` / `target` / `rule` — consumed by the model (see `dataset.py`).
+ * - `repo` / `file` / `line` / `kind` / `name` / `degradedType` / `preciseType` /
+ *   `siblings` — diagnostics consumed by `rule-coverage-report.ts`
+ *   and `repo-contribution-report.ts`. Ignored by the model.
+ *
+ * Future fields planned by the data-quality plan:
+ */
 interface TrainingPair {
+  input: string;
+  target: string;
+  rule: string;
+
   repo?: string;
+  file: string;
+  line: number;
+  kind: string;
+  name: string;
+  degradedType: string;
+  preciseType: string;
+  siblings?: string;
+  /** Step 1.4: when true, this pair teaches the model to preserve an
+   * already-precise type (degraded === target === typeText). */
+  isNegative?: boolean;
+  /** Step 1.5: deterministic content-hash split ("train" | "val"). */
+  split?: "train" | "val";
+}
+
+/**
+ * Build encoder input prompt. Mirrors `build_refine_prompt` in
+ * `ts_type_refiner/prompt.py` exactly — both implementations MUST stay in sync.
+ *
+ * Wire format v2 (see `prompt.py::PROMPT_VERSION`):
+ *   `[REFINE rule=... | kind=... | name=... | degraded=... | siblings=...]\n---\n<code>`
+ */
+export const PROMPT_VERSION = 2;
+
+function buildRefinePrompt(args: {
   context: string;
   name: string;
   kind: string;
-  degradedType: string;
-  preciseType: string;
   rule: string;
-  file: string;
-  line: number;
-  ast?: string;
+  degradedType: string;
   siblings?: string;
+}): string {
+  const meta = [
+    `rule=${args.rule}`,
+    `kind=${args.kind}`,
+    `name=${args.name}`,
+    `degraded=${args.degradedType}`,
+  ];
+  if (args.siblings) meta.push(`siblings=${args.siblings}`);
+
+  return "[REFINE " + meta.join(" | ") + "]\n---\n" + args.context;
 }
 
 type DegradationResult = { degraded: string; rule: string } | null;
@@ -393,21 +442,39 @@ function parseArgs() {
   const args = process.argv.slice(2);
   let input = "";
   let output = "";
+  let negativeRatio = 0.25;
+  let valPct = 15;
 
   for (let i = 0; i < args.length; i++) {
     if (args[i] === "--output" && args[i + 1]) {
       output = args[i + 1];
+      i++;
+    } else if (args[i] === "--negative-ratio" && args[i + 1]) {
+      const n = parseFloat(args[i + 1]);
+      if (!Number.isFinite(n) || n < 0) {
+        console.error(`Error: invalid --negative-ratio: ${args[i + 1]}`);
+        process.exit(1);
+      }
+      negativeRatio = n;
+      i++;
+    } else if (args[i] === "--val-pct" && args[i + 1]) {
+      const n = parseInt(args[i + 1], 10);
+      if (!Number.isFinite(n) || n < 0 || n > 100) {
+        console.error(`Error: invalid --val-pct: ${args[i + 1]}`);
+        process.exit(1);
+      }
+      valPct = n;
       i++;
     } else if (!input) {
       input = args[i];
     }
   }
 
-  return { input, output };
+  return { input, output, negativeRatio, valPct };
 }
 
 function main() {
-  const { input, output } = parseArgs();
+  const { input, output, negativeRatio, valPct } = parseArgs();
   const inputPath = path.resolve(input || "extracted_types.jsonl");
 
   if (!fs.existsSync(inputPath)) {
@@ -437,20 +504,50 @@ function main() {
     const ann = annotations[i];
     const result = degradeType(ann.typeText);
     if (result) {
-      const modifiedContext = ann.context.split(ann.typeText).join(result.degraded);
-
-      trainingPairs.push({
-        repo: ann.repo,
+      // AST-targeted single-span replace (Step 1.3): use the offsets emitted
+      // by `extract.ts` so we never accidentally clobber a peer occurrence of
+      // the same type text on the same line (e.g. `Record<string, string>`).
+      // Falls back to split/join only if offsets are missing or invalid
+      // (legacy `extracted_*.jsonl` files).
+      let modifiedContext: string;
+      const hasOffsets =
+        typeof ann.typeStart === "number" &&
+        typeof ann.typeEnd === "number" &&
+        ann.context.slice(ann.typeStart, ann.typeEnd) === ann.typeText;
+      if (hasOffsets) {
+        modifiedContext =
+          ann.context.slice(0, ann.typeStart!) +
+          result.degraded +
+          ann.context.slice(ann.typeEnd!);
+      } else {
+        modifiedContext = ann.context.split(ann.typeText).join(result.degraded);
+      }
+      const siblings = applyContainingBoost(
+        ann.siblings ?? "",
+        ann.containingDecl ?? null,
+        result.rule,
+      );
+      const input = buildRefinePrompt({
         context: modifiedContext,
         name: ann.name,
         kind: ann.kind,
-        degradedType: result.degraded,
-        preciseType: ann.typeText,
         rule: result.rule,
+        degradedType: result.degraded,
+        siblings,
+      });
+
+      trainingPairs.push({
+        input,
+        target: ann.typeText,
+        rule: result.rule,
+        repo: ann.repo,
         file: ann.file,
         line: ann.line,
-        ast: ann.ast ?? ann.siblings,
-        siblings: ann.siblings,
+        kind: ann.kind,
+        name: ann.name,
+        degradedType: result.degraded,
+        preciseType: ann.typeText,
+        siblings,
       });
       appliedRules.set(result.rule, (appliedRules.get(result.rule) || 0) + 1);
     } else {
@@ -472,16 +569,66 @@ function main() {
   }
   process.stdout.write("\n");
 
+  const positiveCount = trainingPairs.length;
+
+  // ── Step 1.4: per-rule hard negatives ─────────────────────────────────
+  // For every active rule (positive count > 0), grab annotations whose
+  // `typeText` already matches the rule's degraded shape and emit no-op
+  // pairs `(degraded=typeText, target=typeText, isNegative=true)`. Teaches
+  // the model to preserve types that are already correct.
+  const negatives = negativeRatio > 0
+    ? collectNegatives(annotations, appliedRules, negativeRatio)
+    : [];
+  const negativeRules = new Map<string, number>();
+  for (const { ann, rule } of negatives) {
+    const siblings = applyContainingBoost(
+      ann.siblings ?? "",
+      ann.containingDecl ?? null,
+      rule,
+    );
+    const promptInput = buildRefinePrompt({
+      context: ann.context,
+      name: ann.name,
+      kind: ann.kind,
+      rule,
+      degradedType: ann.typeText,
+      siblings,
+    });
+    trainingPairs.push({
+      input: promptInput,
+      target: ann.typeText,
+      rule,
+      repo: ann.repo,
+      file: ann.file,
+      line: ann.line,
+      kind: ann.kind,
+      name: ann.name,
+      degradedType: ann.typeText,
+      preciseType: ann.typeText,
+      siblings,
+      isNegative: true,
+    });
+    negativeRules.set(rule, (negativeRules.get(rule) || 0) + 1);
+  }
+
   console.log(`\n${"─".repeat(60)}`);
   console.log(`DEGRADATION SUMMARY`);
   console.log(`${"─".repeat(60)}`);
-  console.log(`  Training pairs generated: ${trainingPairs.length}`);
-  console.log(`  Annotations skipped:      ${annotations.length - trainingPairs.length}`);
-  console.log(`  Conversion rate:          ${((trainingPairs.length / annotations.length) * 100).toFixed(1)}%`);
+  console.log(`  Positive pairs:           ${positiveCount}`);
+  console.log(`  Negative pairs:           ${negatives.length}  (ratio=${negativeRatio})`);
+  console.log(`  Total training pairs:     ${trainingPairs.length}`);
+  console.log(`  Annotations skipped:      ${annotations.length - positiveCount}`);
+  console.log(`  Conversion rate:          ${((positiveCount / annotations.length) * 100).toFixed(1)}%`);
 
-  console.log(`\n  Rules applied:`);
-  for (const [rule, count] of [...appliedRules.entries()].sort((a, b) => b[1] - a[1])) {
-    console.log(`    ${rule.padEnd(55)} ${count}`);
+  console.log(`\n  Rules applied (positives + negatives):`);
+  const allRules = new Set<string>([...appliedRules.keys(), ...negativeRules.keys()]);
+  const ruleRows = [...allRules].map((r) => ({
+    rule: r,
+    pos: appliedRules.get(r) || 0,
+    neg: negativeRules.get(r) || 0,
+  })).sort((a, b) => (b.pos + b.neg) - (a.pos + a.neg));
+  for (const row of ruleRows) {
+    console.log(`    ${row.rule.padEnd(55)} pos=${String(row.pos).padStart(5)}  neg=${String(row.neg).padStart(5)}`);
   }
 
   console.log(`\n  Top 30 skipped types:`);
@@ -490,15 +637,61 @@ function main() {
     console.log(`    ${count.toString().padStart(4)}  ${type}`);
   }
 
+  // ── Step 1.5: dedup + content-hash split ─────────────────────────────
+  // Dedup by SHA1(input + "\t" + target) so identical encoder/decoder pairs
+  // (very common in usage repos with copy-pasted props) don't dominate.
+  // Then assign `split` per-input via SHA1(input) % 100, guaranteeing that
+  // duplicate prompts can never straddle the train/val boundary.
+  const sha1 = (s: string) => crypto.createHash("sha1").update(s).digest("hex");
+
+  const seen = new Set<string>();
+  const deduped: TrainingPair[] = [];
+  let dupCount = 0;
+  for (const p of trainingPairs) {
+    const key = sha1(p.input + "\t" + p.target);
+    if (seen.has(key)) {
+      dupCount++;
+      continue;
+    }
+    seen.add(key);
+    deduped.push(p);
+  }
+
+  const splitCounts = { train: 0, val: 0 };
+  const splitByRule = new Map<string, { train: number; val: number }>();
+  for (const p of deduped) {
+    // First 8 hex chars → 32-bit unsigned, mod 100.
+    const bucket = parseInt(sha1(p.input).slice(0, 8), 16) % 100;
+    const split: "train" | "val" = bucket < valPct ? "val" : "train";
+    p.split = split;
+    splitCounts[split]++;
+    const row = splitByRule.get(p.rule) ?? { train: 0, val: 0 };
+    row[split]++;
+    splitByRule.set(p.rule, row);
+  }
+
+  console.log(`\n${"─".repeat(60)}`);
+  console.log(`DEDUP + SPLIT`);
+  console.log(`${"─".repeat(60)}`);
+  console.log(`  Before dedup:  ${trainingPairs.length}`);
+  console.log(`  Duplicates:    ${dupCount}`);
+  console.log(`  After dedup:   ${deduped.length}`);
+  console.log(`  Split (val-pct=${valPct}):  train=${splitCounts.train}  val=${splitCounts.val}  (${(splitCounts.val / deduped.length * 100).toFixed(1)}% val)`);
+  console.log(`\n  Per-rule split:`);
+  const splitRows = [...splitByRule.entries()].sort((a, b) => (b[1].train + b[1].val) - (a[1].train + a[1].val));
+  for (const [rule, c] of splitRows) {
+    console.log(`    ${rule.padEnd(55)} train=${String(c.train).padStart(5)}  val=${String(c.val).padStart(4)}`);
+  }
+
   const outputPath = output
     ? path.resolve(output)
-    : path.join(path.dirname(inputPath), "training_pairs.jsonl");
+    : path.join(path.dirname(inputPath), "encoder_decoder_pairs.jsonl");
   fs.mkdirSync(path.dirname(outputPath), { recursive: true });
-  const outputLines = trainingPairs.map((p) => JSON.stringify(p));
+  const outputLines = deduped.map((p) => JSON.stringify(p));
   fs.writeFileSync(outputPath, outputLines.join("\n") + "\n", "utf-8");
 
   console.log(`\n  Output: ${outputPath}`);
-  console.log(`  ${trainingPairs.length} training pairs ready.`);
+  console.log(`  ${deduped.length} training pairs ready.`);
   console.log(`${"═".repeat(60)}\n`);
 }
 

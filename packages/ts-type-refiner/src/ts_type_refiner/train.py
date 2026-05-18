@@ -31,6 +31,8 @@ from core.trainer import EpochStats, TrainConfig, train
 
 from ts_type_refiner.dataset import TypeRefinerDataset, train_val_split
 from ts_type_refiner.tokenizer import build_from_jsonl
+from ts_type_refiner.prompt import PROMPT_VERSION
+from ts_type_refiner.validators import VALIDATORS
 
 
 DATA_PATH       = "packages/ts-type-extractor/data/encoder_decoder_pairs.jsonl"
@@ -40,12 +42,27 @@ CHECKPOINT_PATH = CHECKPOINT_DIR / "refiner.pt"
 
 
 # ══════════════════════════════════════════════════════════════════════
-# Eval — autoregressive exact-match accuracy on a held-out slice
+# Eval — autoregressive accuracy on a held-out slice
 # ──────────────────────────────────────────────────────────────────────
-# The trainer doesn't know what "good" means for our task. We define
-# it here: greedily generate a target string for each src, compare to
-# the expected target with whitespace-stripped equality.
+# Three metrics per pair, two semantics depending on `isNegative`:
+#
+#   exact_match    : prediction == target (whitespace-stripped). Works for both
+#                    positives and negatives — a "correct preserve" on a negative
+#                    pair has target == degraded, so EM still captures it.
+#
+#   validator_pass : VALIDATORS[rule](prediction) returns True. Meaningful only
+#                    on positives — on a negative, the correct answer is the
+#                    *degraded* form, which validators reject by design.
+#
+#   acceptable     : negative-aware composite —
+#                       isNegative: prediction == degraded (preserve).
+#                       positive  : VALIDATORS[rule](prediction) passes.
+#                    This is what Step 2.4 will use as the "good output" signal.
+#
+# We report macro-acc as the average per-rule rate (avoids common rules
+# dominating). Heatmap dump per eval lets us see which rules collapse first.
 # ══════════════════════════════════════════════════════════════════════
+
 
 def evaluate_exact_match(
     model: EncoderDecoderModel,
@@ -53,17 +70,28 @@ def evaluate_exact_match(
     indices: list[int],
     device: torch.device,
     max_print: int = 5,
-) -> tuple[float, dict[str, tuple[int, int]], float]:
+) -> tuple[float, dict[str, dict[str, int]], float]:
+    """
+    Returns:
+        em_acc   — micro exact-match accuracy (correct / total)
+        by_rule  — {rule: {em, vp, acc, n, n_neg, n_neg_correct}}
+        macro_acc — average of per-rule `acceptable` rates
+    """
     model.eval()
     tok = dataset.tokenizer
-    correct = 0
-    by_rule: dict[str, list[int]] = defaultdict(lambda: [0, 0])
+
+    by_rule: dict[str, dict[str, int]] = defaultdict(
+        lambda: {"em": 0, "vp": 0, "acc": 0, "n": 0, "n_neg": 0, "n_neg_correct": 0}
+    )
+    correct_em = 0
 
     for i, idx in enumerate(indices):
         src_text, expected_tgt = dataset.pairs[idx]
+        rule = dataset.rules[idx] if idx < len(dataset.rules) else "<unknown>"
+        is_neg = dataset.is_negative[idx] if idx < len(dataset.is_negative) else False
+
         src_ids = tok.encode(src_text)[: dataset.max_src_len]
         src_tensor = torch.tensor([src_ids], device=device)
-
         generated = model.generate(
             src_tensor,
             bos_id=tok.bos_id,
@@ -72,38 +100,67 @@ def evaluate_exact_match(
             temperature=0.01,
             verbose=False,
         )
+        gen_text = tok.decode(generated[0].tolist()).strip()
+        expected = expected_tgt.strip()
+        em = gen_text == expected
 
-        gen_text = tok.decode(generated[0].tolist())
-        match = gen_text.strip() == expected_tgt.strip()
-        rule = dataset.rules[idx] if idx < len(dataset.rules) else "<unknown>"
-        by_rule[rule][1] += 1
-        if match:
-            correct += 1
-            by_rule[rule][0] += 1
+        # validator_pass: only meaningful on positives.
+        validator = VALIDATORS.get(rule)
+        vp = bool(validator and validator(gen_text)[0]) if not is_neg else False
+
+        # acceptable: negative-aware composite.
+        if is_neg:
+            acceptable = em  # correctly preserved degraded form
+        else:
+            acceptable = vp
+
+        stats = by_rule[rule]
+        stats["n"] += 1
+        if em:
+            stats["em"] += 1
+            correct_em += 1
+        if vp:
+            stats["vp"] += 1
+        if acceptable:
+            stats["acc"] += 1
+        if is_neg:
+            stats["n_neg"] += 1
+            if em:
+                stats["n_neg_correct"] += 1
 
         if i < max_print:
-            status = "✓" if match else "✗"
-            print(f"  {status} expected: {expected_tgt}")
-            print(f"    got:      {gen_text}")
+            status = "✓" if em else "✗"
+            tag = " [NEG]" if is_neg else ""
+            print(f"  {status}{tag} expected: {expected_tgt}")
+            print(f"    got:        {gen_text}")
 
     if not indices:
         return 0.0, {}, 0.0
 
-    macro_vals = [c / n for c, n in by_rule.values() if n > 0]
-    macro_acc = sum(macro_vals) / len(macro_vals) if macro_vals else 0.0
-    by_rule_final = {k: (v[0], v[1]) for k, v in by_rule.items()}
-    return correct / len(indices), by_rule_final, macro_acc
+    macro_acc_vals = [s["acc"] / s["n"] for s in by_rule.values() if s["n"] > 0]
+    macro_acc = sum(macro_acc_vals) / len(macro_acc_vals) if macro_acc_vals else 0.0
+    em_acc = correct_em / len(indices)
+    return em_acc, dict(by_rule), macro_acc
 
 
-def print_rule_breakdown(by_rule: dict[str, tuple[int, int]], top_n: int = 12) -> None:
+def print_rule_breakdown(by_rule: dict[str, dict[str, int]], top_n: int = 12) -> None:
     if not by_rule:
         return
 
-    rows = sorted(by_rule.items(), key=lambda item: item[1][1], reverse=True)
-    print("    per-rule exact-match (top by support):")
-    for rule, (hit, total) in rows[:top_n]:
-        acc = hit / total if total else 0.0
-        print(f"      {rule:<50} {acc:>6.1%}  ({hit:>4}/{total:<4})")
+    rows = sorted(by_rule.items(), key=lambda kv: kv[1]["n"], reverse=True)
+    print(
+        "    per-rule:  "
+        + f"{'rule':<48} {'em':>6} {'vp':>6} {'acc':>6}  (n,neg)"
+    )
+    for rule, s in rows[:top_n]:
+        n = s["n"] or 1
+        em_pct = s["em"] / n
+        vp_pct = s["vp"] / (n - s["n_neg"]) if n > s["n_neg"] else 0.0
+        acc_pct = s["acc"] / n
+        print(
+            f"      {rule:<48} {em_pct:>5.0%} {vp_pct:>5.0%} {acc_pct:>5.0%}  "
+            f"({s['n']:>4},{s['n_neg']:>3})"
+        )
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -111,6 +168,28 @@ def print_rule_breakdown(by_rule: dict[str, tuple[int, int]], top_n: int = 12) -
 # ══════════════════════════════════════════════════════════════════════
 
 def main() -> None:
+    # ── CLI args ──────────────────────────────────────────────────────
+    import argparse
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--balance-rules",
+        action="store_true",
+        help="Use 1/sqrt(rule_count) weighted sampling (Step 2.2).",
+    )
+    parser.add_argument(
+        "--eval-samples",
+        type=int,
+        default=400,
+        help="Mid-training eval slice size (val set is full at end of run).",
+    )
+    parser.add_argument(
+        "--epochs",
+        type=int,
+        default=50,
+    )
+    cli = parser.parse_args()
+
     # ── Device ────────────────────────────────────────────────────────
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Device: {device}")
@@ -152,7 +231,7 @@ def main() -> None:
 
     # ── Training config ───────────────────────────────────────────────
     train_cfg = TrainConfig(
-        epochs            = 50,
+        epochs            = cli.epochs,
         lr                = 3e-4,
         weight_decay      = 0.01,
         max_grad_norm     = 1.0,
@@ -161,25 +240,36 @@ def main() -> None:
         seed              = 42,
     )
     batch_size   = 96
-    eval_samples = 200   # autoregressive eval is slow — limit per-eval cost
+    eval_samples = cli.eval_samples
 
     print(f"\n{'='*60}")
-    print(f"TRAINING — {train_cfg.epochs} epochs, batch_size={batch_size}, lr={train_cfg.lr}")
+    print(f"TRAINING — {train_cfg.epochs} epochs, batch_size={batch_size}, lr={train_cfg.lr}"
+          f"  balance_rules={cli.balance_rules}")
     print(f"{'='*60}")
 
     # ── Wire callbacks for the pure-function trainer ──────────────────
     # `train_batches` MUST be a factory: a fresh iterable every epoch
     # so that `shuffle=True` actually re-shuffles each pass.
     def train_batches():
+        if cli.balance_rules:
+            return ds.iter_balanced_batches(
+                batch_size,
+                indices=train_idx,
+                epoch_size=len(train_idx),
+                device=device,
+            )
         return ds.iter_batches(batch_size, device=device, shuffle=True, indices=train_idx)
 
     def eval_fn(m: EncoderDecoderModel) -> float:
+        # Mid-training: capped slice for speed.
         eval_idx = val_idx[:eval_samples]
-        acc, by_rule, macro_acc = evaluate_exact_match(m, ds, eval_idx, device, max_print=5)
-        print(f"    → val exact-match: {acc:.1%} ({int(acc*len(eval_idx))}/{len(eval_idx)})")
-        print(f"    → val macro exact-match (per-rule): {macro_acc:.1%}")
-        print_rule_breakdown(by_rule, top_n=10)
-        return acc
+        em_acc, by_rule, macro_acc = evaluate_exact_match(m, ds, eval_idx, device, max_print=5)
+        print(f"    → val exact-match (micro): {em_acc:.1%} ({int(em_acc*len(eval_idx))}/{len(eval_idx)})")
+        print(f"    → val macro acceptable (per-rule): {macro_acc:.1%}")
+        print_rule_breakdown(by_rule, top_n=12)
+        # We track macro acceptable as the optimization target — it captures
+        # both shape correctness on positives and preservation on negatives.
+        return macro_acc
 
     # State captured across epochs by closures — no globals.
     progress: dict = {"best_val": 0.0, "last_loss": 0.0, "last_acc": 0.0}
@@ -209,16 +299,16 @@ def main() -> None:
 
     # ── Final evaluation ──────────────────────────────────────────────
     print(f"\n{'='*60}")
-    print(f"FINAL VALIDATION — generation on {len(val_idx)} held-out pairs")
+    print(f"FINAL VALIDATION — generation on {len(val_idx)} held-out pairs (full set)")
     print(f"{'='*60}")
 
-    val_acc, val_by_rule, val_macro_acc = evaluate_exact_match(model, ds, val_idx, device, max_print=15)
-    print(f"\nValidation exact-match: {val_acc:.1%} ({int(val_acc*len(val_idx))}/{len(val_idx)})")
-    print(f"Validation macro exact-match (per-rule): {val_macro_acc:.1%}")
-    print_rule_breakdown(val_by_rule, top_n=30)
+    val_em, val_by_rule, val_macro_acc = evaluate_exact_match(model, ds, val_idx, device, max_print=15)
+    print(f"\nValidation exact-match (micro): {val_em:.1%} ({int(val_em*len(val_idx))}/{len(val_idx)})")
+    print(f"Validation macro acceptable (per-rule): {val_macro_acc:.1%}")
+    print_rule_breakdown(val_by_rule, top_n=40)
 
-    train_acc, _, _ = evaluate_exact_match(model, ds, train_idx[:50], device, max_print=5)
-    print(f"Train sample exact-match: {train_acc:.1%}")
+    train_em, _, _ = evaluate_exact_match(model, ds, train_idx[:50], device, max_print=5)
+    print(f"Train sample exact-match: {train_em:.1%}")
 
     # ── Summary ───────────────────────────────────────────────────────
     print(f"\n{'='*60}")
@@ -229,9 +319,10 @@ def main() -> None:
     print(f"  Training:   {train_cfg.epochs} epochs, "
           f"final loss={progress['last_loss']:.4f}, "
           f"tf_acc={progress['last_acc']:.0%}")
-    print(f"  Val exact-match:   {val_acc:.1%}")
-    print(f"  Best val:          {progress['best_val']:.1%}")
-    print(f"  Train exact-match: {train_acc:.1%}")
+    print(f"  Val exact-match (micro):   {val_em:.1%}")
+    print(f"  Val macro acceptable:      {val_macro_acc:.1%}")
+    print(f"  Best val (during train):   {progress['best_val']:.1%}")
+    print(f"  Train exact-match:         {train_em:.1%}")
 
     # ── Save checkpoint ───────────────────────────────────────────────
     save_checkpoint(
@@ -240,8 +331,7 @@ def main() -> None:
         model_config = model_config,
         epoch        = train_cfg.epochs,
         loss         = progress["last_loss"],
-        val_accuracy = val_acc,
-    )
+        val_accuracy = val_em,        prompt_version = PROMPT_VERSION,    )
 
     print(f"\n  Checkpoint saved: {CHECKPOINT_PATH}")
     print(f"  Tokenizer saved:  {TOKENIZER_PATH}")

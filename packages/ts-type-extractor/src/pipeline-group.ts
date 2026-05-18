@@ -8,7 +8,6 @@ interface Args {
   context: number;
   extractOut: string;
   pairsOut: string;
-  materializedOut: string;
   strict: boolean;
 }
 
@@ -23,7 +22,6 @@ function parseArgs(): Args {
   let context = 0;
   let extractOut = "";
   let pairsOut = "";
-  let materializedOut = "";
   let strict = false;
 
   for (let i = 0; i < args.length; i++) {
@@ -44,19 +42,15 @@ function parseArgs(): Args {
     } else if (a === "--pairs-out" && args[i + 1]) {
       pairsOut = args[i + 1];
       i++;
-    } else if (a === "--materialized-out" && args[i + 1]) {
-      materializedOut = args[i + 1];
-      i++;
     } else if (a === "--strict") {
       strict = true;
     }
   }
 
   if (!extractOut) extractOut = `data/extracted_${group}.jsonl`;
-  if (!pairsOut) pairsOut = `data/training_pairs.jsonl`;
-  if (!materializedOut) materializedOut = `data/encoder_decoder_pairs.jsonl`;
+  if (!pairsOut) pairsOut = `data/encoder_decoder_pairs.jsonl`;
 
-  return { group, context, extractOut, pairsOut, materializedOut, strict };
+  return { group, context, extractOut, pairsOut, strict };
 }
 
 function runOrThrow(command: string, argv: string[]) {
@@ -67,7 +61,7 @@ function runOrThrow(command: string, argv: string[]) {
 }
 
 function main() {
-  const { group, context, extractOut, pairsOut, materializedOut, strict } = parseArgs();
+  const { group, context, extractOut, pairsOut, strict } = parseArgs();
   const configured = REPO_GROUPS[group];
 
   const existing: string[] = [];
@@ -119,18 +113,9 @@ function main() {
     pairsOut,
   ]);
 
-  runOrThrow("npx", [
-    "tsx",
-    "src/materialize-pairs.ts",
-    pairsOut,
-    "--output",
-    materializedOut,
-  ]);
-
   console.log("\nDone.");
-  console.log(`  extracted:    ${path.resolve(extractOut)}`);
-  console.log(`  pairs:        ${path.resolve(pairsOut)}`);
-  console.log(`  materialized: ${path.resolve(materializedOut)}`);
+  console.log(`  extracted: ${path.resolve(extractOut)}`);
+  console.log(`  pairs:     ${path.resolve(pairsOut)}`);
 }
 
 main();

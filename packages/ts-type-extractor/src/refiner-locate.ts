@@ -10,9 +10,12 @@
  * Inference then runs per-hypothesis validators and keeps the best accepted one.
  */
 
+import { fileURLToPath } from "url";
+
 import { Project, SyntaxKind, Node } from "ts-morph";
 import * as path from "path";
 import * as fs from "fs";
+import { buildSiblings, getContainingDeclName, applyContainingBoost } from "./siblings.js";
 
 interface RefineCandidate {
   id: string;
@@ -25,11 +28,10 @@ interface RefineCandidate {
   context: string;
   degradedType: string;
   rule: string;
-  ast: string;
   siblings: string;
 }
 
-interface CandidateRule {
+export interface CandidateRule {
   key: string;
   name: string;
   match: (typeText: string) => boolean;
@@ -52,7 +54,7 @@ const MUTED_RULE_KEYS = new Set<string>([
   "astro_get_static_paths",
 ]);
 
-const RULES: CandidateRule[] = [
+export const RULES: CandidateRule[] = [
   { key: "react_event_handler", name: "react_event_handler→generic", match: (t) => t === "React.EventHandler<React.SyntheticEvent>" },
   { key: "react_specific_event_handler_alias", name: "react_specific_event_handler_alias→generic", match: (t) => t === "React.EventHandler<React.SyntheticEvent>" },
   { key: "react_event", name: "react_event→synthetic", match: (t) => t === "React.SyntheticEvent" },
@@ -158,70 +160,6 @@ function getContext(sourceText: string, line: number, radius: number): string {
   return lines.slice(start, end).join("\n");
 }
 
-/**
- * Build a compact summary of siblings of the declaration that owns
- * `typeNode`, formatted as `[name: type, name: type]`.
- *
- * `typeNode.getParent()` is the declaration (Parameter, PropertySignature,
- * VariableDeclaration, AsExpression, etc.).
- *
- * Cases handled:
- *   - Parameter   → other parameters in the same function/arrow/method/constructor
- *   - Property    → other properties in the same Interface/TypeLiteral/Class
- *
- * Returns an empty string for declarations without meaningful siblings.
- */
-function getSiblings(typeNode: Node): string {
-  const decl = typeNode.getParent();
-  if (!decl) return "";
-
-  const collected: string[] = [];
-
-  if (decl.getKind() === SyntaxKind.Parameter) {
-    const param = decl as import("ts-morph").ParameterDeclaration;
-    const parent = param.getParent();
-    if (
-      parent &&
-      (Node.isFunctionDeclaration(parent) ||
-        Node.isArrowFunction(parent) ||
-        Node.isFunctionExpression(parent) ||
-        Node.isMethodDeclaration(parent) ||
-        Node.isConstructorDeclaration(parent) ||
-        Node.isMethodSignature(parent) ||
-        Node.isFunctionTypeNode(parent))
-    ) {
-      for (const p of parent.getParameters()) {
-        if (p === param) continue;
-        const tn = p.getTypeNode();
-        const t = tn ? tn.getText() : "?";
-        collected.push(`${p.getName()}: ${t}`);
-      }
-    }
-  } else if (
-    Node.isPropertySignature(decl) ||
-    Node.isPropertyDeclaration(decl)
-  ) {
-    const parent = decl.getParent();
-    if (
-      parent &&
-      (Node.isInterfaceDeclaration(parent) ||
-        Node.isTypeLiteral(parent) ||
-        Node.isClassDeclaration(parent))
-    ) {
-      for (const m of parent.getMembers()) {
-        if (m === decl) continue;
-        if (Node.isPropertySignature(m) || Node.isPropertyDeclaration(m)) {
-          const tn = m.getTypeNode();
-          const t = tn ? tn.getText() : "?";
-          collected.push(`${m.getName()}: ${t}`);
-        }
-      }
-    }
-  }
-
-  if (collected.length === 0) return "";
-  return "[" + collected.join(", ") + "]";
-}
 
 function parseArgs() {
   const args = process.argv.slice(2);
@@ -313,9 +251,13 @@ function locateInProject(
       const id = `${absFile}:${start}`;
       const file = path.relative(baseDir, absFile);
       const context = getContext(sourceText, anchorLine, contextRadius);
-      const ast = getSiblings(typeNode);
+      // typeNode owns the type; its parent is the declaration that holds it.
+      const decl = typeNode.getParent() ?? typeNode;
+      const baseSiblings = buildSiblings(decl, kind);
+      const containingDecl = getContainingDeclName(decl);
 
       for (const rule of matches) {
+        const siblings = applyContainingBoost(baseSiblings, containingDecl, rule.name);
         candidates.push({
           id,
           file,
@@ -327,8 +269,7 @@ function locateInProject(
           context,
           degradedType: text,
           rule: rule.name,
-          ast,
-          siblings: ast,
+          siblings,
         });
       }
     };
@@ -454,4 +395,7 @@ function main() {
   console.log(`\n  Output: ${outPath}`);
 }
 
-main();
+// Only run when invoked directly (not when imported, e.g. by `negatives.ts`).
+if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
+  main();
+}

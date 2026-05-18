@@ -21,10 +21,11 @@
 import { Project, SyntaxKind, Node } from "ts-morph";
 import * as path from "path";
 import * as fs from "fs";
+import { buildSiblings, getContainingDeclName } from "./siblings.js";
 
-// ══════════════════════════════════════════════════════════════════════
+// ═════════════════════════════════════════════════════════════════════
 // Types
-// ══════════════════════════════════════════════════════════════════════
+// ═════════════════════════════════════════════════════════════════════
 
 interface TypeAnnotation {
   repo: string;
@@ -34,9 +35,11 @@ interface TypeAnnotation {
   name: string;
   typeText: string;
   context: string;
-  parentName: string | null;
-  ast: string;
+  /** Offsets of `typeText` within `context` — used for AST-targeted replace. */
+  typeStart: number;
+  typeEnd: number;
   siblings: string;
+  containingDecl: string | null;
 }
 
 // ══════════════════════════════════════════════════════════════════════
@@ -72,102 +75,59 @@ function parseArgs() {
 // Helpers
 // ══════════════════════════════════════════════════════════════════════
 
-function getContext(
-  sourceText: string,
-  line: number,
-  radius: number,
-): string {
-  const lines = sourceText.split("\n");
-  const start = Math.max(0, line - 1 - radius);
-  const end = Math.min(lines.length, line - 1 + radius + 1);
-  return lines.slice(start, end).join("\n");
+/**
+ * Cumulative offset of the start of each line in `sourceText`. lineStart[L] is
+ * the byte offset of the first character on 1-based line `L+1`. Used to map
+ * absolute ts-morph offsets ↔ context-relative offsets.
+ */
+function computeLineStarts(sourceText: string): number[] {
+  const starts = [0];
+  for (let i = 0; i < sourceText.length; i++) {
+    if (sourceText.charCodeAt(i) === 10 /* \n */) starts.push(i + 1);
+  }
+  return starts;
 }
 
 /**
- * Build a compact summary of `node`'s siblings inside its immediate
- * structural container, formatted as `[name: type, name: type]`.
+ * Build the code context surrounding `line` ± `radius` plus the offsets of
+ * the type annotation `[absStart, absEnd)` relative to the returned context.
  *
- * Cases handled:
- *   - Parameter   → other parameters in the same function/arrow/method/constructor
- *   - Property    → other properties in the same Interface/TypeLiteral/Class
- *
- * Returns an empty string for nodes without meaningful siblings
- * (variables, type assertions, generic arguments, return types).
+ * If the type annotation spans beyond the radius window (multi-line types
+ * like `Array<{\n  ...\n}>`), the window is **extended** to include the full
+ * type so `context.slice(typeStart, typeEnd) === typeText` always holds.
  */
-function getSiblings(node: Node): string {
-  const collected: string[] = [];
+function getContextWithType(
+  sourceText: string,
+  lineStarts: number[],
+  line: number,
+  radius: number,
+  absStart: number,
+  absEnd: number,
+): { context: string; typeStart: number; typeEnd: number } {
+  const lineIdx = line - 1; // 0-based
+  const winStart = Math.max(0, lineIdx - radius);
+  const winEndExcl = Math.min(lineStarts.length, lineIdx + radius + 1);
 
-  if (node.getKind() === SyntaxKind.Parameter) {
-    const param = node as import("ts-morph").ParameterDeclaration;
-    const parent = param.getParent();
-    if (
-      parent &&
-      (Node.isFunctionDeclaration(parent) ||
-        Node.isArrowFunction(parent) ||
-        Node.isFunctionExpression(parent) ||
-        Node.isMethodDeclaration(parent) ||
-        Node.isConstructorDeclaration(parent) ||
-        Node.isMethodSignature(parent) ||
-        Node.isFunctionTypeNode(parent))
-    ) {
-      for (const p of parent.getParameters()) {
-        if (p === param) continue;
-        const tn = p.getTypeNode();
-        const t = tn ? tn.getText() : "?";
-        collected.push(`${p.getName()}: ${t}`);
-      }
-    }
-  } else if (
-    Node.isPropertySignature(node) ||
-    Node.isPropertyDeclaration(node)
-  ) {
-    const parent = node.getParent();
-    if (
-      parent &&
-      (Node.isInterfaceDeclaration(parent) ||
-        Node.isTypeLiteral(parent) ||
-        Node.isClassDeclaration(parent))
-    ) {
-      for (const m of parent.getMembers()) {
-        if (m === node) continue;
-        if (Node.isPropertySignature(m) || Node.isPropertyDeclaration(m)) {
-          const tn = m.getTypeNode();
-          const t = tn ? tn.getText() : "?";
-          collected.push(`${m.getName()}: ${t}`);
-        }
-      }
-    }
-  }
+  let ctxStart = lineStarts[winStart];
+  let ctxEndExcl =
+    winEndExcl < lineStarts.length
+      ? lineStarts[winEndExcl] - 1 /* drop trailing newline */
+      : sourceText.length;
 
-  if (collected.length === 0) return "";
-  return "[" + collected.join(", ") + "]";
+  // Expand to cover the full type span if it sticks out.
+  if (absStart < ctxStart) ctxStart = absStart;
+  if (absEnd > ctxEndExcl) ctxEndExcl = absEnd;
+
+  const context = sourceText.slice(ctxStart, ctxEndExcl);
+  return {
+    context,
+    typeStart: absStart - ctxStart,
+    typeEnd: absEnd - ctxStart,
+  };
 }
 
-function getParentName(node: Node): string | null {
-  let current = node.getParent();
-  while (current) {
-    if (
-      Node.isFunctionDeclaration(current) ||
-      Node.isArrowFunction(current) ||
-      Node.isFunctionExpression(current) ||
-      Node.isMethodDeclaration(current)
-    ) {
-      const parent = current.getParent();
-      if (parent && Node.isVariableDeclaration(parent)) {
-        return parent.getName();
-      }
-      if ("getName" in current && typeof current.getName === "function") {
-        const name = current.getName();
-        if (name) return name;
-      }
-    }
-    if (Node.isClassDeclaration(current)) {
-      return current.getName() ?? null;
-    }
-    current = current.getParent();
-  }
-  return null;
-}
+// Siblings + containing-decl helpers live in ./siblings.ts and are shared
+// with refiner-locate.ts to guarantee identical context at train + infer.
 
 // ══════════════════════════════════════════════════════════════════════
 // Extraction
@@ -185,7 +145,10 @@ const SKIP_FILE_PATTERNS = [
 
 // Max type annotation length in characters.
 // Anything longer is auto-gen noise, not a real hand-written type.
-const MAX_TYPE_LENGTH = 200;
+// Raised to 400 in Step 1.6 to keep realistic long union/intersection types
+// (React event payloads, TanStack query result shapes) that were previously
+// clipped at 200.
+const MAX_TYPE_LENGTH = 400;
 
 function extractFromProject(
   projectPath: string,
@@ -226,6 +189,7 @@ function extractFromProject(
   for (const sourceFile of sourceFiles) {
     const filePath = path.relative(projectPath, sourceFile.getFilePath());
     const sourceText = sourceFile.getFullText();
+    const lineStarts = computeLineStarts(sourceText);
     const beforeCount = annotations.length;
 
     sourceFile.forEachDescendant((node) => {
@@ -241,7 +205,8 @@ function extractFromProject(
         const param = node as import("ts-morph").ParameterDeclaration;
         const typeNode = param.getTypeNode();
         if (typeNode) {
-          const ast = getSiblings(param);
+          const siblings = buildSiblings(param, "parameter");
+          const containingDecl = getContainingDeclName(param);
           pushIfShort({
             repo: repoName,
             file: filePath,
@@ -249,10 +214,9 @@ function extractFromProject(
             kind: "parameter",
             name: param.getName(),
             typeText: typeNode.getText(),
-            context: getContext(sourceText, param.getStartLineNumber(), contextRadius),
-            parentName: getParentName(param),
-            ast,
-            siblings: ast,
+            ...getContextWithType(sourceText, lineStarts, param.getStartLineNumber(), contextRadius, typeNode.getStart(), typeNode.getEnd()),
+            siblings,
+            containingDecl,
           });
         }
       }
@@ -261,7 +225,8 @@ function extractFromProject(
       if (Node.isVariableDeclaration(node)) {
         const typeNode = node.getTypeNode();
         if (typeNode) {
-          const ast = getSiblings(node);
+          const siblings = buildSiblings(node, "variable");
+          const containingDecl = getContainingDeclName(node);
           pushIfShort({
             repo: repoName,
             file: filePath,
@@ -269,10 +234,9 @@ function extractFromProject(
             kind: "variable",
             name: node.getName(),
             typeText: typeNode.getText(),
-            context: getContext(sourceText, node.getStartLineNumber(), contextRadius),
-            parentName: getParentName(node),
-            ast,
-            siblings: ast,
+            ...getContextWithType(sourceText, lineStarts, node.getStartLineNumber(), contextRadius, typeNode.getStart(), typeNode.getEnd()),
+            siblings,
+            containingDecl,
           });
         }
       }
@@ -285,7 +249,8 @@ function extractFromProject(
       ) {
         const returnTypeNode = node.getReturnTypeNode();
         if (returnTypeNode) {
-          const ast = getSiblings(node);
+          const siblings = buildSiblings(node, "return_type");
+          const containingDecl = getContainingDeclName(node);
           const name =
             Node.isFunctionDeclaration(node) || Node.isMethodDeclaration(node)
               ? (node.getName() ?? "<anonymous>")
@@ -303,10 +268,9 @@ function extractFromProject(
             kind: "return_type",
             name,
             typeText: returnTypeNode.getText(),
-            context: getContext(sourceText, node.getStartLineNumber(), contextRadius),
-            parentName: getParentName(node),
-            ast,
-            siblings: ast,
+            ...getContextWithType(sourceText, lineStarts, node.getStartLineNumber(), contextRadius, returnTypeNode.getStart(), returnTypeNode.getEnd()),
+            siblings,
+            containingDecl,
           });
         }
       }
@@ -315,7 +279,8 @@ function extractFromProject(
       if (Node.isPropertySignature(node) || Node.isPropertyDeclaration(node)) {
         const typeNode = node.getTypeNode();
         if (typeNode) {
-          const ast = getSiblings(node);
+          const siblings = buildSiblings(node, "property");
+          const containingDecl = getContainingDeclName(node);
           pushIfShort({
             repo: repoName,
             file: filePath,
@@ -323,10 +288,9 @@ function extractFromProject(
             kind: "property",
             name: node.getName(),
             typeText: typeNode.getText(),
-            context: getContext(sourceText, node.getStartLineNumber(), contextRadius),
-            parentName: getParentName(node),
-            ast,
-            siblings: ast,
+            ...getContextWithType(sourceText, lineStarts, node.getStartLineNumber(), contextRadius, typeNode.getStart(), typeNode.getEnd()),
+            siblings,
+            containingDecl,
           });
         }
       }
@@ -335,7 +299,8 @@ function extractFromProject(
       if (Node.isAsExpression(node)) {
         const typeNode = node.getTypeNode();
         if (typeNode) {
-          const ast = getSiblings(node);
+          const siblings = buildSiblings(node, "type_assertion");
+          const containingDecl = getContainingDeclName(node);
           pushIfShort({
             repo: repoName,
             file: filePath,
@@ -343,10 +308,9 @@ function extractFromProject(
             kind: "type_assertion",
             name: "<as_expression>",
             typeText: typeNode.getText(),
-            context: getContext(sourceText, node.getStartLineNumber(), contextRadius),
-            parentName: getParentName(node),
-            ast,
-            siblings: ast,
+            ...getContextWithType(sourceText, lineStarts, node.getStartLineNumber(), contextRadius, typeNode.getStart(), typeNode.getEnd()),
+            siblings,
+            containingDecl,
           });
         }
       }
@@ -357,7 +321,8 @@ function extractFromProject(
         if (typeArgs.length > 0) {
           const funcName = node.getExpression().getText();
           for (const typeArg of typeArgs) {
-            const ast = getSiblings(node);
+            const siblings = buildSiblings(node, "generic_argument");
+            const containingDecl = getContainingDeclName(node);
             pushIfShort({
               repo: repoName,
               file: filePath,
@@ -365,10 +330,9 @@ function extractFromProject(
               kind: "generic_argument",
               name: funcName,
               typeText: typeArg.getText(),
-              context: getContext(sourceText, node.getStartLineNumber(), contextRadius),
-              parentName: getParentName(node),
-              ast,
-              siblings: ast,
+              ...getContextWithType(sourceText, lineStarts, node.getStartLineNumber(), contextRadius, typeArg.getStart(), typeArg.getEnd()),
+              siblings,
+              containingDecl,
             });
           }
         }

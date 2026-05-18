@@ -33,7 +33,7 @@ Repository URL/path manifest lives in `src/repo-manifest.ts`.
 | File | Role | Reads | Writes |
 |---|---|---|---|
 | `extract.ts` | Walk AST, dump every type annotation with surrounding context | `*.ts` / `*.tsx` files | `extracted_<group>.jsonl` |
-| `degrade.ts` | Apply 27 degradation rules → produce supervised pairs | `extracted_<group>.jsonl` | `training_pairs.jsonl` |
+| `degrade.ts` | Apply 27 degradation rules → produce supervised pairs (model-ready `input`/`target`/`rule` + diagnostics) | `extracted_<group>.jsonl` | `encoder_decoder_pairs.jsonl` |
 | `refiner-locate.ts` | Find type nodes whose text matches a known **degraded** shape | `*.ts` / `*.tsx` files | `candidates.jsonl` |
 | `refiner-apply.ts` | Splice model suggestions back into source files | `edits.jsonl` (from `refiner-infer`) | mutated `*.ts` files |
 
@@ -90,10 +90,17 @@ Applies 27 degradation rules sequentially (first match wins). For each match:
 replaces the precise type WITH the degraded type IN the context (so the model
 can't cheat by copying the answer from surrounding code).
 
-Emitted record:
+Emitted record (encoder/decoder pair + diagnostics on one line):
 ```ts
-{ context, name, kind, degradedType, preciseType, rule, file, line }
+{
+  // model-facing
+  input, target, rule,
+  // diagnostics (ignored by trainer)
+  repo, file, line, kind, name, degradedType, preciseType, siblings,
+}
 ```
+`input` is built by `buildRefinePrompt(...)` and MUST stay in sync with
+`ts_type_refiner.prompt.build_refine_prompt` on the Python side.
 
 Progress: prints `i/total (pct%) pairs=N rate ETA` every 2 s or 10 000 rows.
 
@@ -144,7 +151,7 @@ re-reads each file as a guard against stale offsets, writes back in place.
 | File | Producer | Consumer |
 |---|---|---|
 | `extracted_<group>.jsonl` (`type-defs` / `usage`) | `extract.ts` | `degrade.ts` |
-| `training_pairs.jsonl` | `degrade.ts` | `ts-type-refiner` `refiner-train` |
+| `encoder_decoder_pairs.jsonl` | `degrade.ts` | `ts-type-refiner` `refiner-train`, `rule-coverage-report.ts`, `repo-contribution-report.ts` |
 | `candidates.jsonl` | `refiner-locate.ts` | `ts-type-refiner` `refiner-infer` |
 | `edits.jsonl` | `refiner-infer` | `refiner-apply.ts` |
 
@@ -158,7 +165,7 @@ shapes.
 1. Add the rule to `DEGRADATION_RULES` in `degrade.ts`.
 2. Re-run grouped pipeline(s) (`pipeline:type-defs` and/or
    `pipeline:usage`) — confirm the new rule produces enough pairs
-   (≥ ~100 in `training_pairs.jsonl` rule histogram).
+   (≥ ~100 in `encoder_decoder_pairs.jsonl` rule histogram).
 3. Add the inverse matcher to `RULES` in `refiner-locate.ts` and append the
    key to `RULE_ORDER`.
 4. Add a `validate_*` function and a `VALIDATORS[...]` entry in

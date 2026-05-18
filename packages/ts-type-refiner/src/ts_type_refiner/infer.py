@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import time
 from pathlib import Path
 
@@ -38,9 +39,52 @@ import torch
 from core.checkpoint import build_model, load as load_checkpoint
 from core.predictor import Predictor
 
-from ts_type_refiner.prompt import build_refine_prompt
+from ts_type_refiner.prompt import build_refine_prompt, PROMPT_VERSION
 from ts_type_refiner.tokenizer import TSTokenizer
 from ts_type_refiner.validators import VALIDATORS
+
+
+# ══════════════════════════════════════════════════════════════════════
+# Identifier-overlap analysis (Step 2.4)
+# ──────────────────────────────────────────────────────────────────────
+# When *every* proposal fails the rule validator we want to distinguish
+# two failure modes:
+#
+#   (a) shape failure — the proposal has the right identifiers but the
+#       wrong structure (e.g. wrapped `HTMLDivElement` in extra `<>`).
+#   (b) hallucinated identifier — the proposal references a type name
+#       that does not appear anywhere in the prompt's siblings. The
+#       model invented it, and the user almost never wants that.
+#
+# Recoverability of the target identifier from siblings is currently
+# only ~18% (see Step 1.7), so we DO NOT use the overlap as a hard
+# filter — that would reject too many correct predictions. We only use
+# it as a diagnostic label and per-proposal annotation.
+# ══════════════════════════════════════════════════════════════════════
+
+_TRIVIAL_IDENTS = frozenset({
+    "string", "number", "boolean", "unknown", "any", "never",
+    "void", "null", "undefined", "object", "true", "false",
+    "Array", "Promise", "Record", "Partial", "Required", "Readonly",
+    "Pick", "Omit", "Exclude", "Extract", "NonNullable", "ReturnType",
+    "Parameters", "InstanceType", "Awaited", "Map", "Set", "Date",
+    "React", "JSX",
+})
+
+_IDENT_RE = re.compile(r"[A-Za-z_$][A-Za-z0-9_$]*")
+
+
+def _non_trivial_idents(s: str) -> set[str]:
+    return {m.group(0) for m in _IDENT_RE.finditer(s or "")} - _TRIVIAL_IDENTS
+
+
+def _ident_overlap(proposal_text: str, siblings: str) -> tuple[int, int]:
+    """Return (overlap, total) for non-trivial idents in proposal vs siblings."""
+    prop_idents = _non_trivial_idents(proposal_text)
+    if not prop_idents:
+        return 0, 0
+    sib_idents = _non_trivial_idents(siblings)
+    return len(prop_idents & sib_idents), len(prop_idents)
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -84,6 +128,13 @@ def main() -> None:
 
     # ── Load checkpoint + rebuild model ───────────────────────────────
     ckpt  = load_checkpoint(args.checkpoint, device=device)
+    ckpt_prompt_version = ckpt.extras.get("prompt_version")
+    if ckpt_prompt_version != PROMPT_VERSION:
+        print(
+            f"WARNING: checkpoint prompt_version={ckpt_prompt_version!r} "
+            f"!= current PROMPT_VERSION={PROMPT_VERSION}. "
+            "Predictions may be degraded; retrain after format changes."
+        )
     model = build_model(ckpt.model_config, device=device)
     model.load_state_dict(ckpt.state_dict)
 
@@ -173,7 +224,6 @@ def main() -> None:
             kind=c.get("kind", "<unknown>"),
             rule=rule,
             degraded_type=c.get("degradedType", "<unknown>"),
-            ast=c.get("ast") or c.get("siblings"),
             siblings=c.get("siblings"),
         )
         proposals = predict.predict_n(
@@ -183,13 +233,20 @@ def main() -> None:
             temperature=args.candidate_temperature,
         )
 
+        siblings_str = c.get("siblings", "") or ""
+
         selected = None
         validator_passed_any = False
+        any_proposal_grounded = False  # at least one proposal's idents overlap with siblings
         best_validator_reason = "no valid proposal"
         best_valid_below_threshold_lp = float("-inf")
         best_valid_below_threshold_text = ""
 
         for prop in proposals:
+            overlap, total_idents = _ident_overlap(prop.text, siblings_str)
+            if total_idents > 0 and overlap > 0:
+                any_proposal_grounded = True
+
             ok, reason = validator(prop.text)
             if not ok:
                 best_validator_reason = reason
@@ -209,6 +266,15 @@ def main() -> None:
         accepted = selected is not None
         if not validator_passed_any:
             n_rejected_validator += 1
+            # Diagnostic refinement (Step 2.4): label hallucinated-identifier
+            # failures explicitly. This does not affect acceptance — it only
+            # makes the reason field actionable downstream.
+            if not any_proposal_grounded and any(
+                _ident_overlap(p.text, siblings_str)[1] > 0 for p in proposals
+            ):
+                best_validator_reason = (
+                    f"hallucinated_identifier: {best_validator_reason}"
+                )
         elif not accepted:
             n_rejected_logprob += 1
         if accepted:
@@ -240,6 +306,8 @@ def main() -> None:
                     "text": p.text,
                     "logprob": p.mean_logprob,
                     "normalized_prob": p.normalized_prob,
+                    "identsInSiblings": _ident_overlap(p.text, siblings_str)[0],
+                    "nonTrivialIdents": _ident_overlap(p.text, siblings_str)[1],
                 }
                 for p in proposals
             ],
