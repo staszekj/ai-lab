@@ -76,6 +76,38 @@ import torch.nn as nn
 
 
 # ══════════════════════════════════════════════════════════════════════
+# MICRO-MODEL — reference dimensions used in all inline comments
+# ══════════════════════════════════════════════════════════════════════
+#
+# Inline comments throughout this file show concrete tensor shapes and
+# matrix examples using a tiny "micro-model" identical to the one in
+# presentation_encoder_decoder.py.  Every number in the comments can be
+# traced back to one of these names:
+#
+#   vocab_size  = 12   tokens: <pad> <bos> const let var enabled : string number ON | OFF
+#   d_model     =  6   embedding / hidden dimension (must equal num_heads × d_k)
+#   num_heads   =  3   parallel attention heads
+#   d_k         =  2   = d_model // num_heads  — dimension per head
+#   d_ff        = 12   feed-forward inner dimension (here 2 × d_model; prod. uses 4 ×)
+#   num_layers  =  2   encoder blocks AND decoder blocks
+#   max_seq_len = 16   positional embedding table size
+#   batch       =  1   always 1 in presentation examples
+#   src_len     =  4   source tokens: "const", "enabled", ":", "string"
+#   tgt_len     =  3   decoder-input tokens: "<bos>", "ON", "|"
+#                      (decoder target "ON | OFF" is tgt_len=3 shifted by 1)
+#
+# Example pair traced end-to-end:
+#   SOURCE  "const enabled : string"   src_ids = [[2, 5, 6, 7]]  shape (1, 4)
+#   TARGET  "ON | OFF"                 tgt_ids = [[9, 10, 11]]   shape (1, 3)
+#   decoder INPUT  (teacher-forced)  = [[1,  9, 10]]  ("<bos> ON |")
+#   decoder TARGET (what to predict) = [[9, 10, 11]]  ("ON | OFF")
+#
+# Production model (ts-type-refiner) uses much larger values, e.g.:
+#   vocab_size=2048, d_model=256, num_heads=8, d_k=32, d_ff=1024, num_layers=4
+# ══════════════════════════════════════════════════════════════════════
+
+
+# ══════════════════════════════════════════════════════════════════════
 # ENCODER BLOCK — bidirectional self-attention + FFN (Pre-LN)
 # ══════════════════════════════════════════════════════════════════════
 
@@ -149,6 +181,15 @@ class ManualTransformerEncoderBlock(nn.Module):
         Returns
         -------
         (batch, seq_len, d_model)
+
+        Presentation example (d_model=6, heads=3, d_k=2, src_seq=4):
+            x  "const enabled : string"            (1, 4, 6)
+            Q = W_Q(x)                             (1, 4, 6)
+            Q split into heads                     (1, 3, 4, 2)   [batch, heads, seq, d_k]
+            scores = Q @ K^T / sqrt(2)             (1, 3, 4, 4)   ← SQUARE: every src token × every src token
+            weights = softmax(scores)              (1, 3, 4, 4)   ← each row sums to 1
+            head_out = weights @ V                 (1, 3, 4, 2)
+            concat + W_O                           (1, 4, 6)
         """
         batch_size, seq_len, d_model = x.shape
         assert d_model == self.d_model
@@ -159,56 +200,63 @@ class ManualTransformerEncoderBlock(nn.Module):
 
         # ── Pre-LN + multi-head self-attention ───────────────────────
         x_norm1 = self.layer_norm_1(x)
-        # x_norm1: (batch, seq_len, d_model)
+        # x_norm1: (batch, seq_len, d_model)  e.g. (1, 4, 6)
         if verbose:
             print(f"After LayerNorm 1:                 x_norm1:  {x_norm1.shape}")
 
-        # Project to Q, K, V (each still d_model wide; head split is a reshape).
-        Q = self.W_Q(x_norm1)
-        K = self.W_K(x_norm1)
-        V = self.W_V(x_norm1)
-        # Q,K,V: (batch, seq_len, d_model)
+        # Project to Q, K, V — three independent (d_model → d_model) linear maps.
+        # Q asks "what am I looking for?", K says "what do I have?",
+        # V says "what do I return if matched?".
+        Q = self.W_Q(x_norm1)    # (1, 4, 6)
+        K = self.W_K(x_norm1)    # (1, 4, 6)
+        V = self.W_V(x_norm1)    # (1, 4, 6)
 
-        # Reshape into heads: (batch, seq, d_model) → (batch, heads, seq, d_k)
+        # Split d_model into `num_heads` independent attention subspaces.
+        # (batch, seq, d_model) → (batch, seq, heads, d_k) → (batch, heads, seq, d_k)
+        # Example: (1, 4, 6) → (1, 4, 3, 2) → (1, 3, 4, 2)
         Q = Q.view(batch_size, seq_len, self.num_heads, self.d_k).transpose(1, 2)
         K = K.view(batch_size, seq_len, self.num_heads, self.d_k).transpose(1, 2)
         V = V.view(batch_size, seq_len, self.num_heads, self.d_k).transpose(1, 2)
-        # Q,K,V: (batch, heads, seq_len, d_k)
+        # Q,K,V: (1, 3, 4, 2)
 
-        # Scaled dot-product attention.
-        # scores = Q @ K^T / sqrt(d_k)
+        # scores[h, i, j] = how much token i attends to token j in head h.
+        # (1, 3, 4, 2) @ (1, 3, 2, 4) = (1, 3, 4, 4) — SQUARE because Q and K
+        # both come from the same source sequence (bidirectional self-attention).
         scores = torch.matmul(Q, K.transpose(-2, -1)) / self.scale
-        # scores: (batch, heads, seq_len, seq_len)
+        # scores: (1, 3, 4, 4)
 
         if attn_mask is not None:
-            # Additive mask: -inf at blocked positions → softmax → 0.
+            # Additive mask: -inf at blocked positions → softmax drives those to 0.
             scores = scores + attn_mask
 
         weights = torch.softmax(scores, dim=-1)
-        # weights: (batch, heads, seq_len, seq_len)  [each row sums to 1]
+        # weights: (1, 3, 4, 4) — each row is a probability distribution over src tokens.
+        # Row i sums to 1: token i's attention is fully distributed over all 4 src positions.
 
+        # Weighted sum of values: how much of each V row to mix for each query token.
         head_out = torch.matmul(weights, V)
-        # head_out: (batch, heads, seq_len, d_k)
+        # (1, 3, 4, 4) @ (1, 3, 4, 2) = (1, 3, 4, 2)
 
-        # Concatenate heads: (batch, heads, seq, d_k) → (batch, seq, d_model)
+        # Merge heads: last two dims (heads, seq, d_k) → (seq, d_model).
+        # (1, 3, 4, 2) → (1, 4, 3, 2) → (1, 4, 6)
         attn_out = head_out.transpose(1, 2).contiguous().view(batch_size, seq_len, self.d_model)
         attn_out = self.W_O(attn_out)
-        # attn_out: (batch, seq_len, d_model)
+        # attn_out: (1, 4, 6)
 
-        # First residual connection.
-        x1 = x + attn_out
-        # x1: (batch, seq_len, d_model)
+        x1 = x + attn_out   # first residual: (1, 4, 6)
         if verbose:
             print(f"After attention + residual #1:     x1:       {x1.shape}")
 
         # ── Pre-LN + feed-forward network ────────────────────────────
+        # FFN applies the same two-layer MLP independently to each token.
+        # Expand: (1, 4, 6) → (1, 4, 12)   [d_model → d_ff, typically 4×]
+        # Compress: (1, 4, 12) → (1, 4, 6) [d_ff → d_model]
         x1_norm = self.layer_norm_2(x1)
-        ffn_hidden = self.ffn_linear1(x1_norm)         # (batch, seq, d_ff)
+        ffn_hidden = self.ffn_linear1(x1_norm)   # (1, 4, 12)
         ffn_hidden = self.ffn_gelu(ffn_hidden)
-        ffn_out    = self.ffn_linear2(ffn_hidden)      # (batch, seq, d_model)
+        ffn_out    = self.ffn_linear2(ffn_hidden) # (1, 4, 6)
 
-        output = x1 + ffn_out
-        # output: (batch, seq_len, d_model)
+        output = x1 + ffn_out   # second residual: (1, 4, 6)
         if verbose:
             print(f"After FFN + residual #2:           output:   {output.shape}")
             print(f"{'='*60}")
@@ -381,7 +429,22 @@ class ManualDecoderBlock(nn.Module):
             print(f"DecoderBlock | x: {x.shape}  encoder_output: {encoder_output.shape}")
 
         # ── Sub-layer 1: masked self-attention ───────────────────────
-        # Decoder tokens attend to themselves and PAST decoder tokens only.
+        # Decoder tokens attend to themselves and PAST decoder tokens only
+        # (enforced by the causal tgt_mask added to scores).
+        #
+        # Presentation: tgt_len=3 ("<bos>","ON","|"), d_model=6, heads=3, d_k=2
+        #   Q=K=V from x_norm1        (1, 3, 6)
+        #   split into heads          (1, 3, 3, 2)   [batch, heads, tgt_len, d_k]
+        #   scores = Q @ K^T          (1, 3, 3, 3)   ← SQUARE: tgt × tgt
+        #   + causal mask             (3, 3)
+        #
+        #              <bos>    ON      |
+        #   <bos>  [   0.      -inf    -inf ]
+        #      ON  [   0.       0.     -inf ]
+        #       |  [   0.       0.      0.  ]
+        #
+        #   weights after softmax     (1, 3, 3, 3)
+        #   head_out = weights @ V    (1, 3, 3, 2)   → concat → (1, 3, 6)
         x_norm1 = self.layer_norm_1(x)
         self_attn_out = self._multi_head_attention(
             Q_src=x_norm1, K_src=x_norm1, V_src=x_norm1,
@@ -389,37 +452,54 @@ class ManualDecoderBlock(nn.Module):
             W_V=self.self_W_V, W_O=self.self_W_O,
             attn_mask=tgt_mask,  # causal
         )
-        x1 = x + self_attn_out
-        # x1: (batch, tgt_len, d_model)
+        x1 = x + self_attn_out   # (1, 3, 6)
         if verbose:
             print(f"After masked-self-attn + residual: x1:       {x1.shape}")
 
         # ── Sub-layer 2: cross-attention ─────────────────────────────
-        # Each decoder query asks: "which encoder positions matter for
-        # what I'm generating right now?" K and V come from encoder_output.
-        # No causal mask: the decoder may attend to ALL encoder positions.
+        # The decoder "reads" the encoder output here.  Q comes from the
+        # decoder (what the decoder is currently thinking about generating),
+        # K and V come from encoder_output (the full source context).
+        # No causal mask — the decoder may attend to ALL encoder positions.
+        #
+        # Presentation: tgt_len=3, src_len=4, heads=3, d_k=2
+        #   Q from decoder x1_norm    (1, 3, 6)  → heads → (1, 3, 3, 2)
+        #   K from encoder_output     (1, 4, 6)  → heads → (1, 3, 4, 2)
+        #   V from encoder_output     (1, 4, 6)  → heads → (1, 3, 4, 2)
+        #
+        #   scores = Q @ K^T          (1, 3, 3, 2) @ (1, 3, 2, 4) = (1, 3, 3, 4)
+        #                             ← NOT SQUARE: 3 decoder rows × 4 encoder cols
+        #
+        #   Each decoder token's row = "how much does this decoder token attend
+        #   to each of the 4 source tokens?".  After training, when generating
+        #   "ON", the "<bos>→ON" row should peak strongly on "enabled" and
+        #   "string" columns, because those tokens carry the type information.
+        #
+        #   weights after softmax     (1, 3, 3, 4)   [tgt_len × src_len per head]
+        #   head_out = weights @ V    (1, 3, 3, 4) @ (1, 3, 4, 2) = (1, 3, 3, 2)
+        #   concat + W_O              (1, 3, 6)
         x1_norm = self.layer_norm_2(x1)
         cross_attn_out = self._multi_head_attention(
-            Q_src=x1_norm,         # Q from decoder
-            K_src=encoder_output,  # K from encoder
-            V_src=encoder_output,  # V from encoder
+            Q_src=x1_norm,         # Q from decoder   (1, 3, 6)
+            K_src=encoder_output,  # K from encoder   (1, 4, 6)
+            V_src=encoder_output,  # V from encoder   (1, 4, 6)
             W_Q=self.cross_W_Q, W_K=self.cross_W_K,
             W_V=self.cross_W_V, W_O=self.cross_W_O,
             attn_mask=src_mask,
         )
-        x2 = x1 + cross_attn_out
-        # x2: (batch, tgt_len, d_model)
+        x2 = x1 + cross_attn_out   # (1, 3, 6)
         if verbose:
             print(f"After cross-attn + residual:       x2:       {x2.shape}")
 
         # ── Sub-layer 3: feed-forward network ────────────────────────
+        # Same MLP as in the encoder, applied independently per token position.
+        # (1, 3, 6) → (1, 3, 12) → GELU → (1, 3, 6)
         x2_norm = self.layer_norm_3(x2)
         ffn_hidden = self.ffn_linear1(x2_norm)
         ffn_hidden = self.ffn_gelu(ffn_hidden)
         ffn_out    = self.ffn_linear2(ffn_hidden)
 
-        output = x2 + ffn_out
-        # output: (batch, tgt_len, d_model)
+        output = x2 + ffn_out   # (1, 3, 6)
         if verbose:
             print(f"After FFN + residual:              output:   {output.shape}")
             print(f"{'='*60}")
@@ -614,6 +694,17 @@ class EncoderDecoderModel(nn.Module):
     # → presentation STEP 3: 3×3 causal mask visualization with -inf cells.
     # ------------------------------------------------------------------
     def _create_causal_mask(self, seq_len: int, device: torch.device) -> torch.Tensor:
+        # Presentation example: tgt_seq=3, decoder input "<bos> ON |"
+        #
+        #   Added to scores before softmax — -inf cells become 0 after softmax.
+        #
+        #              <bos>    ON      |
+        #   <bos>  [   0.      -inf    -inf ]   ← <bos> may only attend to itself
+        #      ON  [   0.       0.     -inf ]   ← ON sees <bos> and ON
+        #       |  [   0.       0.      0.  ]   ← | sees full past context
+        #
+        #   This enforces causality: when predicting token t we must not
+        #   "see" tokens t+1, t+2, … which haven't been generated yet.
         return torch.triu(
             torch.ones(seq_len, seq_len, device=device) * float('-inf'),
             diagonal=1,
@@ -632,6 +723,28 @@ class EncoderDecoderModel(nn.Module):
         Returns
         -------
         (batch, src_len, d_model)
+
+        Presentation example  src = "const enabled : string"  (vocab=12, d_model=6):
+
+            src_ids = [[2, 5, 6, 7]]                        shape (1, 4)
+                           │
+            token_embedding picks rows 2,5,6,7
+            from the shared (vocab × d_model) = (12 × 6) table     → (1, 4, 6)
+
+            pos_ids = [0, 1, 2, 3]
+            positional_embedding picks rows 0-3
+            from the (max_seq × d_model) = (16 × 6) table          → (4, 6)
+
+            enc_x = token_emb + pos_emb  [broadcast over batch]    → (1, 4, 6)
+                ┌──────────────────────────────────────────────────┐
+                │ row 0: embedding("const")  + pos(0)  = vec_const │
+                │ row 1: embedding("enabled")+ pos(1)  = vec_enab  │
+                │ row 2: embedding(":")      + pos(2)  = vec_colon │
+                │ row 3: embedding("string") + pos(3)  = vec_str   │
+                └──────────────────────────────────────────────────┘
+
+            → 2 × EncoderBlock (bidirectional self-attn, NO mask)   (1, 4, 6)
+            → encoder_final_norm                                     (1, 4, 6)
         """
         batch_size, src_len = src_ids.shape
         assert src_len <= self.max_seq_len
@@ -644,17 +757,20 @@ class EncoderDecoderModel(nn.Module):
         # Token + positional embedding lookup.
         position_ids = torch.arange(src_len, device=src_ids.device)
         token_emb    = self.token_embedding(src_ids)              # (batch, src_len, d_model)
-        pos_emb      = self.positional_embedding(position_ids)    # (src_len, d_model)
+        pos_emb      = self.positional_embedding(position_ids)    # (src_len, d_model) — broadcast
         x = token_emb + pos_emb                                   # (batch, src_len, d_model)
 
-        # Run through every encoder block (no mask → bidirectional).
+        # Run through every encoder block — NO mask, so every source token
+        # can attend to every other source token (bidirectional).
         for i, block in enumerate(self.encoder_blocks):
             if verbose:
                 print(f"\n── Encoder block {i} ──")
             x = block(x, attn_mask=None, verbose=verbose)
 
         encoder_output = self.encoder_final_norm(x)
-        # encoder_output: (batch, src_len, d_model)
+        # encoder_output: (batch, src_len, d_model)  e.g. (1, 4, 6)
+        # This tensor is the "memory" of the source sentence — it is passed
+        # unchanged as K and V to every cross-attention layer of every decoder block.
         return encoder_output
 
     # ------------------------------------------------------------------
@@ -676,8 +792,31 @@ class EncoderDecoderModel(nn.Module):
         Returns
         -------
         logits : (batch, tgt_len, vocab_size)
+
+        Presentation example  tgt_input = "<bos> ON |"  (vocab=12, d_model=6):
+
+            tgt_ids = [[1, 9, 10]]                          shape (1, 3)
+                │
+            token_embedding picks rows 1,9,10 from (12×6)        → (1, 3, 6)
+            pos_emb picks rows 0,1,2 from (16×6)                  → (3, 6)
+            dec_x = token_emb + pos_emb                           → (1, 3, 6)
+                ┌────────────────────────────────────────────┐
+                │ row 0: emb("<bos>") + pos(0) = vec_bos     │
+                │ row 1: emb("ON")    + pos(1) = vec_on      │
+                │ row 2: emb("|")     + pos(2) = vec_pipe    │
+                └────────────────────────────────────────────┘
+
+            tgt_mask: (3, 3)  causal — see _create_causal_mask
+
+            → 2 × DecoderBlock (masked self-attn + cross-attn + FFN)  (1, 3, 6)
+            → decoder_final_norm                                        (1, 3, 6)
+            → lm_head  (d_model → vocab_size = 6 → 12)                 (1, 3, 12)
+
+            logits[0, 0, :] = 12 scores for predicting after "<bos>"  → target "ON"
+            logits[0, 1, :] = 12 scores for predicting after "ON"     → target "|"
+            logits[0, 2, :] = 12 scores for predicting after "|"      → target "OFF"
         """
-        batch_size, tgt_len = tgt_ids.shape
+        _, tgt_len = tgt_ids.shape
         assert tgt_len <= self.max_seq_len
 
         if verbose:
@@ -685,27 +824,26 @@ class EncoderDecoderModel(nn.Module):
             print(f"# DECODER FORWARD PASS | tgt_ids: {tgt_ids.shape}  encoder_output: {encoder_output.shape}")
             print(f"{'#'*60}")
 
-        # Token + positional embedding lookup.
+        # Token + positional embedding lookup — same tables shared with encoder.
         position_ids = torch.arange(tgt_len, device=tgt_ids.device)
-        token_emb    = self.token_embedding(tgt_ids)
-        pos_emb      = self.positional_embedding(position_ids)
+        token_emb    = self.token_embedding(tgt_ids)    # (batch, tgt_len, d_model)
+        pos_emb      = self.positional_embedding(position_ids)  # (tgt_len, d_model)
         x = token_emb + pos_emb
-        # x: (batch, tgt_len, d_model)
+        # x: (batch, tgt_len, d_model)  e.g. (1, 3, 6)
 
-        # Causal mask blocks the decoder from attending to future tokens.
+        # Causal mask prevents token i from attending to tokens i+1, i+2, …
         tgt_mask = self._create_causal_mask(tgt_len, device=tgt_ids.device)
-        # tgt_mask: (tgt_len, tgt_len)
+        # tgt_mask: (tgt_len, tgt_len)  e.g. (3, 3)
 
-        # Run through every decoder block. encoder_output is reused as-is
-        # in every block's cross-attention sub-layer.
+        # encoder_output is passed unchanged to every decoder block — same
+        # (1, 4, 6) tensor is the K and V source for all cross-attention layers.
         for i, block in enumerate(self.decoder_blocks):
             if verbose:
                 print(f"\n── Decoder block {i} ──")
             x = block(x, encoder_output, tgt_mask=tgt_mask, verbose=verbose)
 
-        x = self.decoder_final_norm(x)
-        logits = self.lm_head(x)
-        # logits: (batch, tgt_len, vocab_size)
+        x = self.decoder_final_norm(x)      # (batch, tgt_len, d_model)
+        logits = self.lm_head(x)            # (batch, tgt_len, vocab_size)  e.g. (1, 3, 12)
         return logits
 
     # ------------------------------------------------------------------
