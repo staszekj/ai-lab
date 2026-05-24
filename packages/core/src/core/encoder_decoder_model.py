@@ -426,6 +426,90 @@ class ManualDecoderBlock(nn.Module):
 
         return output
 
+    # ------------------------------------------------------------------
+    # KV-cache helpers — used by EncoderDecoderModel.generate() only.
+    # ------------------------------------------------------------------
+
+    def precompute_cross_kv(
+        self, encoder_output: torch.Tensor
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Project encoder_output → (K, V) in multi-head format once per generate() call.
+
+        encoder_output : (batch, src_len, d_model)
+        returns        : K, V each (batch, heads, src_len, d_k)
+        """
+        batch_size, src_len, _ = encoder_output.shape
+        K = self.cross_W_K(encoder_output).view(batch_size, src_len, self.num_heads, self.d_k).transpose(1, 2)
+        V = self.cross_W_V(encoder_output).view(batch_size, src_len, self.num_heads, self.d_k).transpose(1, 2)
+        return K, V
+
+    def forward_cached(
+        self,
+        x: torch.Tensor,
+        cross_kv: tuple[torch.Tensor, torch.Tensor],
+        self_kv: tuple[torch.Tensor, torch.Tensor] | None,
+    ) -> tuple[torch.Tensor, tuple[torch.Tensor, torch.Tensor]]:
+        """Single-step decoder forward for autoregressive inference with KV cache.
+
+        Unlike forward(), processes ONE new token at a time. Cross K/V are
+        passed in precomputed; self K/V are accumulated across steps.
+
+        Parameters
+        ----------
+        x        : (batch, 1, d_model)  — embedding of the single new token
+        cross_kv : (K, V) each (batch, heads, src_len, d_k) — constant across steps
+        self_kv  : (K, V) each (batch, heads, past_len, d_k), or None at step 0
+
+        Returns
+        -------
+        output      : (batch, 1, d_model)
+        new_self_kv : updated (K, V) with current token appended
+        """
+        batch_size = x.shape[0]
+
+        # ── Sub-layer 1: self-attention ──────────────────────────────
+        x_norm1 = self.layer_norm_1(x)
+
+        Q     = self.self_W_Q(x_norm1).view(batch_size, 1, self.num_heads, self.d_k).transpose(1, 2)
+        new_K = self.self_W_K(x_norm1).view(batch_size, 1, self.num_heads, self.d_k).transpose(1, 2)
+        new_V = self.self_W_V(x_norm1).view(batch_size, 1, self.num_heads, self.d_k).transpose(1, 2)
+
+        if self_kv is not None:
+            full_K = torch.cat([self_kv[0], new_K], dim=2)
+            full_V = torch.cat([self_kv[1], new_V], dim=2)
+        else:
+            full_K, full_V = new_K, new_V
+
+        # No causal mask: Q is always the last position so attending to
+        # full_K/V (all past + current) is already causal by construction.
+        scores  = torch.matmul(Q, full_K.transpose(-2, -1)) / self.scale
+        weights = torch.softmax(scores, dim=-1)
+        head_out = torch.matmul(weights, full_V)
+        self_attn_out = self.self_W_O(
+            head_out.transpose(1, 2).contiguous().view(batch_size, 1, self.d_model)
+        )
+        x1 = x + self_attn_out
+
+        # ── Sub-layer 2: cross-attention (precomputed K, V) ──────────
+        x1_norm = self.layer_norm_2(x1)
+        cross_K, cross_V = cross_kv
+
+        Q_c = self.cross_W_Q(x1_norm).view(batch_size, 1, self.num_heads, self.d_k).transpose(1, 2)
+        scores_c  = torch.matmul(Q_c, cross_K.transpose(-2, -1)) / self.scale
+        weights_c = torch.softmax(scores_c, dim=-1)
+        head_out_c = torch.matmul(weights_c, cross_V)
+        cross_attn_out = self.cross_W_O(
+            head_out_c.transpose(1, 2).contiguous().view(batch_size, 1, self.d_model)
+        )
+        x2 = x1 + cross_attn_out
+
+        # ── Sub-layer 3: FFN ─────────────────────────────────────────
+        x2_norm = self.layer_norm_3(x2)
+        ffn_out = self.ffn_linear2(self.ffn_gelu(self.ffn_linear1(x2_norm)))
+        output  = x2 + ffn_out
+
+        return output, (full_K, full_V)
+
 
 # ══════════════════════════════════════════════════════════════════════
 # ENCODER-DECODER MODEL — full seq2seq Transformer
@@ -669,18 +753,36 @@ class EncoderDecoderModel(nn.Module):
             print(f"{'#'*60}")
 
         # Encoder runs ONCE; encoder_output is reused at every decoder step.
-        # This is the key efficiency advantage of encoder-decoder over
-        # decoder-only models, which re-process the entire growing context.
         encoder_output = self.encode(src_ids, verbose=False)
+
+        # Pre-compute cross K/V for every decoder block — encoder_output is
+        # constant for the entire generation loop, so this projection is done
+        # once instead of once-per-step.
+        cross_kv_list = [
+            block.precompute_cross_kv(encoder_output) for block in self.decoder_blocks
+        ]
 
         generated = torch.tensor([[bos_id]], device=src_ids.device)
         # generated: (1, 1) starting with <BOS>
 
-        for step in range(max_new_tokens):
-            logits = self.decode(generated, encoder_output, verbose=False)
-            # logits: (1, current_tgt_len, vocab_size)
+        # Self-attention KV cache: one (K, V) entry per decoder layer.
+        # None at step 0; grows by one token-slice each step.
+        self_kv_list: list[tuple[torch.Tensor, torch.Tensor] | None] = [None] * self.num_layers
 
-            # Take only the LAST position's logits (prediction for next token).
+        for step in range(max_new_tokens):
+            # Embed only the most-recently appended token.
+            new_id = generated[:, -1:]
+            pos    = torch.tensor([generated.shape[1] - 1], device=src_ids.device)
+            x = self.token_embedding(new_id) + self.positional_embedding(pos)
+            # x: (1, 1, d_model)
+
+            for i, block in enumerate(self.decoder_blocks):
+                x, self_kv_list[i] = block.forward_cached(x, cross_kv_list[i], self_kv_list[i])
+
+            x      = self.decoder_final_norm(x)
+            logits = self.lm_head(x)
+            # logits: (1, 1, vocab_size)
+
             next_token_logits = logits[:, -1, :] / temperature
             probs      = torch.softmax(next_token_logits, dim=-1)
             next_token = torch.multinomial(probs, num_samples=1)
