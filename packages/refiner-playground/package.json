@@ -8,6 +8,9 @@
     "run": "tsx src/run.ts",
     "run:dry": "tsx src/run.ts --dry-run"
   },
+  "pnpm": {
+    "onlyBuiltDependencies": ["esbuild"]
+  },
   "devDependencies": {
     "@types/node": "^22.0.0",
     "@types/react": "^19.2.14",
