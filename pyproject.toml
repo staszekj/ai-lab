@@ -5,4 +5,4 @@ description = "AI experimentation monorepo"
 requires-python = ">=3.12"
 
 [tool.uv.workspace]
-members = ["packages/*"]
+members = ["packages/core", "packages/ts-type-extractor", "packages/ts-type-refiner", "packages/refiner-playground"]
