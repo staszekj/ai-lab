@@ -120,26 +120,31 @@ function isStringLiteral(tok: string): boolean {
   return /^'[^']*'$/.test(tok) || /^"[^"]*"$/.test(tok);
 }
 
+// Rule numbering mirrors validators.py (ts-type-refiner) and refiner-locate.ts RULES — keep in sync.
 const DEGRADATION_RULES: DegradationRule[] = [
   // React ecosystem
+  // 1
   (t) => {
     if (/^React\.\w+EventHandler(?:<.+>)?$/.test(t) && t !== "React.EventHandler<React.SyntheticEvent>") {
       return { degraded: "React.EventHandler<React.SyntheticEvent>", rule: "react_event_handler→generic" };
     }
     return null;
   },
+  // 1b
   (t) => {
     if (/^(Mouse|Keyboard|Pointer|Touch|Drag|Focus|Change|Clipboard|Composition|Animation|Transition|Form|Wheel)EventHandler(?:<.+>)?$/.test(t)) {
       return { degraded: "React.EventHandler<React.SyntheticEvent>", rule: "react_specific_event_handler_alias→generic" };
     }
     return null;
   },
+  // 2
   (t) => {
     if (/^React\.\w+Event(?:<.+>)?$/.test(t) && t !== "React.SyntheticEvent") {
       return { degraded: "React.SyntheticEvent", rule: "react_event→synthetic" };
     }
     return null;
   },
+  // 3
   (t) => {
     const m = t.match(/^React\.ComponentPropsWithRef<(.+)>$/);
     if (m && m[1].trim() !== "any") {
@@ -147,6 +152,7 @@ const DEGRADATION_RULES: DegradationRule[] = [
     }
     return null;
   },
+  // 4
   (t) => {
     const m = t.match(/^React\.ComponentPropsWithoutRef<(.+)>$/);
     if (m && m[1].trim() !== "any") {
@@ -154,6 +160,7 @@ const DEGRADATION_RULES: DegradationRule[] = [
     }
     return null;
   },
+  // 5
   (t) => {
     const m = t.match(/^React\.ElementRef<(.+)>$/);
     if (m && m[1].trim() !== "any") {
@@ -161,6 +168,7 @@ const DEGRADATION_RULES: DegradationRule[] = [
     }
     return null;
   },
+  // 6
   (t) => {
     const m = t.match(/^React\.RefObject<(.+)>$/);
     if (m && !["unknown", "any"].includes(m[1].trim())) {
@@ -168,6 +176,7 @@ const DEGRADATION_RULES: DegradationRule[] = [
     }
     return null;
   },
+  // 7
   (t) => {
     const m = t.match(/^React\.MutableRefObject<(.+)>$/);
     if (m && !["unknown", "any"].includes(m[1].trim())) {
@@ -175,6 +184,7 @@ const DEGRADATION_RULES: DegradationRule[] = [
     }
     return null;
   },
+  // 8
   (t) => {
     const m = t.match(/^React\.Dispatch<\s*React\.SetStateAction<(.+)>\s*>$/);
     if (m && !["unknown", "any"].includes(m[1].trim())) {
@@ -185,6 +195,7 @@ const DEGRADATION_RULES: DegradationRule[] = [
     }
     return null;
   },
+  // 9
   (t) => {
     if (norm(t) === "keyof JSX.IntrinsicElements") {
       return { degraded: "string", rule: "jsx_intrinsic_keyof→string" };
@@ -193,6 +204,7 @@ const DEGRADATION_RULES: DegradationRule[] = [
   },
 
   // Literal / template families
+  // 10
   (t) => {
     const parts = splitUnion(t);
     if (parts.length >= 2 && parts.every(isStringLiteral)) {
@@ -200,6 +212,7 @@ const DEGRADATION_RULES: DegradationRule[] = [
     }
     return null;
   },
+  // 11
   (t) => {
     if (t.includes("`") && t !== "string") {
       return { degraded: "string", rule: "template_literal_type→string" };
@@ -208,18 +221,21 @@ const DEGRADATION_RULES: DegradationRule[] = [
   },
 
   // Native browser + custom elements
+  // 11b
   (t) => {
     if (/^HTML\w+Element$/.test(t) && t !== "HTMLElement") {
       return { degraded: "HTMLElement", rule: "html_specific_element→html_element" };
     }
     return null;
   },
+  // 11c
   (t) => {
     if (/^HTML\w+Element\s*\|\s*null$/.test(t) && t !== "HTMLElement | null") {
       return { degraded: "HTMLElement | null", rule: "html_specific_element_nullable→html_element_nullable" };
     }
     return null;
   },
+  // 11d
   (t) => {
     const m = t.match(/^CustomEvent<(.+)>$/);
     if (m && !["unknown", "any"].includes(m[1].trim())) {
@@ -227,6 +243,7 @@ const DEGRADATION_RULES: DegradationRule[] = [
     }
     return null;
   },
+  // 11e
   (t) => {
     const m = t.match(/^Record<\s*string\s*,\s*(.+)\s*>$/);
     if (m && !["unknown", "any"].includes(m[1].trim())) {
@@ -234,6 +251,7 @@ const DEGRADATION_RULES: DegradationRule[] = [
     }
     return null;
   },
+  // 11f
   (t) => {
     const m = t.match(/^Map<\s*(.+?)\s*,\s*(.+?)\s*>$/);
     if (m && !(m[1].trim() === "unknown" && m[2].trim() === "unknown")) {
@@ -241,6 +259,7 @@ const DEGRADATION_RULES: DegradationRule[] = [
     }
     return null;
   },
+  // 11g
   (t) => {
     const m = t.match(/^Set<\s*(.+?)\s*>$/);
     if (m && !["unknown", "any"].includes(m[1].trim())) {
@@ -248,6 +267,7 @@ const DEGRADATION_RULES: DegradationRule[] = [
     }
     return null;
   },
+  // 11h
   (t) => {
     if (t === "AddEventListenerOptions") {
       return { degraded: "EventListenerOptions", rule: "dom_add_event_listener_options→event_listener_options" };
@@ -256,48 +276,56 @@ const DEGRADATION_RULES: DegradationRule[] = [
   },
 
   // Ambiguous UNKNOWN families (locator will emit multi-hypothesis)
+  // 12
   (t) => {
     if (/\bextends\b/.test(t) && /\?/.test(t) && /:/.test(t)) {
       return { degraded: "unknown", rule: "conditional_type→unknown" };
     }
     return null;
   },
+  // 13
   (t) => {
     if (/^[A-Za-z0-9_$.<>,\s]+\[[^\]]+\]$/.test(t) && !t.endsWith("[]")) {
       return { degraded: "unknown", rule: "indexed_access_type→unknown" };
     }
     return null;
   },
+  // 14
   (t) => {
     if (/^(Extract|Exclude|Pick|Omit|Partial|Required|Readonly|NonNullable|Parameters|ReturnType|InstanceType|Awaited)</.test(t)) {
       return { degraded: "unknown", rule: "utility_type→unknown" };
     }
     return null;
   },
+  // 14b
   (t) => {
     if (t === "MutationObserverInit") {
       return { degraded: "unknown", rule: "dom_mutation_observer_init→unknown" };
     }
     return null;
   },
+  // 14c
   (t) => {
     if (t === "IntersectionObserverInit") {
       return { degraded: "unknown", rule: "dom_intersection_observer_init→unknown" };
     }
     return null;
   },
+  // 14d
   (t) => {
     if (t === "ShadowRootInit") {
       return { degraded: "unknown", rule: "dom_shadow_root_init→unknown" };
     }
     return null;
   },
+  // 14e
   (t) => {
     if (t === "CSSStyleDeclaration") {
       return { degraded: "unknown", rule: "dom_css_style_declaration→unknown" };
     }
     return null;
   },
+  // 14f
   (t) => {
     if (/^ElementInternals\s*&\s*.+$/.test(t)) {
       return { degraded: "unknown", rule: "dom_element_internals_intersection→unknown" };
@@ -306,6 +334,7 @@ const DEGRADATION_RULES: DegradationRule[] = [
   },
 
   // Generic wrappers from type-defs
+  // 15
   (t) => {
     const m = t.match(/^Promise<(.+)>$/);
     if (m && !SIMPLE_TYPES.has(m[1].trim())) {
@@ -313,6 +342,7 @@ const DEGRADATION_RULES: DegradationRule[] = [
     }
     return null;
   },
+  // 16
   (t) => {
     const m = t.match(/^ReadonlyArray<(.+)>$/);
     if (m && !["unknown", "any"].includes(m[1].trim())) {
@@ -320,6 +350,7 @@ const DEGRADATION_RULES: DegradationRule[] = [
     }
     return null;
   },
+  // 17
   (t) => {
     const m = t.match(/^UseQueryResult<\s*(.+?)\s*,\s*(.+?)\s*>$/);
     if (m && !(m[1].trim() === "unknown" && m[2].trim() === "unknown")) {
@@ -327,6 +358,7 @@ const DEGRADATION_RULES: DegradationRule[] = [
     }
     return null;
   },
+  // 18
   (t) => {
     const m = t.match(/^UseInfiniteQueryResult<\s*(.+?)\s*,\s*(.+?)\s*>$/);
     if (m && !(m[1].trim() === "unknown" && m[2].trim() === "unknown")) {
@@ -337,6 +369,7 @@ const DEGRADATION_RULES: DegradationRule[] = [
     }
     return null;
   },
+  // 18b
   (t) => {
     const m = t.match(/^QueryObserverResult<\s*(.+?)\s*,\s*(.+?)\s*>$/);
     if (m && !(m[1].trim() === "unknown" && m[2].trim() === "unknown")) {
@@ -347,6 +380,7 @@ const DEGRADATION_RULES: DegradationRule[] = [
     }
     return null;
   },
+  // 18c
   (t) => {
     const m = t.match(/^InfiniteData<\s*(.+?)(?:\s*,\s*(.+?)\s*)?>$/);
     if (!m) return null;
@@ -358,6 +392,7 @@ const DEGRADATION_RULES: DegradationRule[] = [
       rule: "tanstack_infinite_data→unknown",
     };
   },
+  // 18cc
   (t) => {
     const m = t.match(/^InfiniteQueryObserverResult<\s*(.+?)\s*,\s*(.+?)\s*>$/);
     if (m && !(m[1].trim() === "unknown" && m[2].trim() === "unknown")) {
@@ -368,6 +403,7 @@ const DEGRADATION_RULES: DegradationRule[] = [
     }
     return null;
   },
+  // 18d
   (t) => {
     const m = t.match(/^QueryFunctionContext<\s*(.+)\s*>$/);
     if (m && m[1].trim() !== "unknown") {
@@ -380,6 +416,7 @@ const DEGRADATION_RULES: DegradationRule[] = [
   },
 
   // Astro
+  // 18e
   (t) => {
     const m = t.match(/^InferGetStaticPropsType<(.+)>$/);
     if (m && m[1].trim() !== "unknown") {
@@ -390,6 +427,7 @@ const DEGRADATION_RULES: DegradationRule[] = [
     }
     return null;
   },
+  // 18f
   (t) => {
     const m = t.match(/^InferGetStaticPathsType<(.+)>$/);
     if (m && m[1].trim() !== "unknown") {
@@ -400,6 +438,7 @@ const DEGRADATION_RULES: DegradationRule[] = [
     }
     return null;
   },
+  // 18g
   (t) => {
     if (t === "APIRoute") {
       return {
@@ -409,6 +448,7 @@ const DEGRADATION_RULES: DegradationRule[] = [
     }
     return null;
   },
+  // 18h
   (t) => {
     if (t === "GetStaticPaths") {
       return {
@@ -418,6 +458,7 @@ const DEGRADATION_RULES: DegradationRule[] = [
     }
     return null;
   },
+  // 19
   (t) => {
     const m = t.match(/^CollectionEntry<(.+)>$/);
     if (m && m[1].trim() !== "any") {

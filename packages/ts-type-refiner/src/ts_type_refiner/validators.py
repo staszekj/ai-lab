@@ -519,6 +519,7 @@ MUTED_RULES = {
     "astro_get_static_paths→unknown",
 }
 
+# Rule numbering mirrors degrade.ts DEGRADATION_RULES and refiner-locate.ts RULES — keep in sync.
 ALL_VALIDATORS: Dict[str, Validator] = {
     "react_event_handler→generic": validate_react_event_handler,
     "react_specific_event_handler_alias→generic": validate_react_specific_event_handler_alias,

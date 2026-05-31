@@ -54,33 +54,53 @@ const MUTED_RULE_KEYS = new Set<string>([
   "astro_get_static_paths",
 ]);
 
+// Rule numbering mirrors degrade.ts DEGRADATION_RULES and validators.py (ts-type-refiner) — keep in sync.
 export const RULES: CandidateRule[] = [
+  // 1
   { key: "react_event_handler", name: "react_event_handler→generic", match: (t) => t === "React.EventHandler<React.SyntheticEvent>" },
+  // 1b
   { key: "react_specific_event_handler_alias", name: "react_specific_event_handler_alias→generic", match: (t) => t === "React.EventHandler<React.SyntheticEvent>" },
+  // 2
   { key: "react_event", name: "react_event→synthetic", match: (t) => t === "React.SyntheticEvent" },
+  // 3
   { key: "react_component_props_with_ref", name: "react_component_props_with_ref→any", match: (t) => t === "React.ComponentPropsWithRef<any>" },
+  // 4
   { key: "react_component_props_without_ref", name: "react_component_props_without_ref→any", match: (t) => t === "React.ComponentPropsWithoutRef<any>" },
+  // 5
   { key: "react_element_ref", name: "react_element_ref→any", match: (t) => t === "React.ElementRef<any>" },
+  // 6
   { key: "react_refobject", name: "react_refobject→unknown", match: (t) => t === "React.RefObject<unknown>" },
+  // 7
   { key: "react_mutable_refobject", name: "react_mutable_refobject→unknown", match: (t) => t === "React.MutableRefObject<unknown>" },
+  // 8
   {
     key: "react_dispatch_setstateaction",
     name: "react_dispatch_setstateaction→unknown",
     match: (t) => t === "React.Dispatch<React.SetStateAction<unknown>>",
   },
+  // 9
   { key: "jsx_intrinsic_keyof", name: "jsx_intrinsic_keyof→string", match: (t) => t === "string" },
+  // 10
   { key: "string_literal_union", name: "string_literal_union→string", match: (t) => t === "string" },
+  // 11
   { key: "template_literal_type", name: "template_literal_type→string", match: (t) => t === "string" },
+  // 11b
   { key: "html_specific_element", name: "html_specific_element→html_element", match: (t) => t === "HTMLElement" },
+  // 11c
   {
     key: "html_specific_element_nullable",
     name: "html_specific_element_nullable→html_element_nullable",
     match: (t) => norm(t) === "HTMLElement | null",
   },
+  // 11d
   { key: "custom_event", name: "custom_event→unknown", match: (t) => t === "CustomEvent<unknown>" },
+  // 11e
   { key: "record_string_value", name: "record_string_value→unknown", match: (t) => norm(t) === "Record<string, unknown>" },
+  // 11f
   { key: "map", name: "map→unknown", match: (t) => norm(t) === "Map<unknown, unknown>" },
+  // 11g
   { key: "set", name: "set→unknown", match: (t) => t === "Set<unknown>" },
+  // 11h
   {
     key: "dom_add_event_listener_options",
     name: "dom_add_event_listener_options→event_listener_options",
@@ -88,59 +108,80 @@ export const RULES: CandidateRule[] = [
   },
 
   // Ambiguous UNKNOWN rules: emit all hypotheses for `unknown`.
+  // 12
   { key: "conditional_type", name: "conditional_type→unknown", match: (t) => t === "unknown" },
+  // 13
   { key: "indexed_access_type", name: "indexed_access_type→unknown", match: (t) => t === "unknown" },
+  // 14
   { key: "utility_type", name: "utility_type→unknown", match: (t) => t === "unknown" },
+  // 14b
   { key: "dom_mutation_observer_init", name: "dom_mutation_observer_init→unknown", match: (t) => t === "unknown" },
+  // 14c
   { key: "dom_intersection_observer_init", name: "dom_intersection_observer_init→unknown", match: (t) => t === "unknown" },
+  // 14d
   { key: "dom_shadow_root_init", name: "dom_shadow_root_init→unknown", match: (t) => t === "unknown" },
+  // 14e
   { key: "dom_css_style_declaration", name: "dom_css_style_declaration→unknown", match: (t) => t === "unknown" },
+  // 14f
   {
     key: "dom_element_internals_intersection",
     name: "dom_element_internals_intersection→unknown",
     match: (t) => t === "unknown",
   },
 
+  // 15
   { key: "promise", name: "promise→unknown", match: (t) => t === "Promise<unknown>" },
+  // 16
   { key: "readonly_array", name: "readonly_array→unknown", match: (t) => t === "ReadonlyArray<unknown>" },
+  // 17
   { key: "tanstack_use_query_result", name: "tanstack_use_query_result→unknown", match: (t) => norm(t) === "UseQueryResult<unknown, unknown>" },
+  // 18
   {
     key: "tanstack_use_infinite_query_result",
     name: "tanstack_use_infinite_query_result→unknown",
     match: (t) => norm(t) === "UseInfiniteQueryResult<unknown, unknown>",
   },
+  // 18b
   {
     key: "tanstack_query_observer_result",
     name: "tanstack_query_observer_result→unknown",
     match: (t) => norm(t) === "QueryObserverResult<unknown, unknown>",
   },
+  // 18c
   {
     key: "tanstack_infinite_data",
     name: "tanstack_infinite_data→unknown",
     match: (t) => norm(t) === "InfiniteData<unknown, unknown>",
   },
+  // 18cc
   {
     key: "tanstack_infinite_query_observer_result",
     name: "tanstack_infinite_query_observer_result→unknown",
     match: (t) => norm(t) === "InfiniteQueryObserverResult<unknown, unknown>",
   },
+  // 18d
   {
     key: "tanstack_query_function_context",
     name: "tanstack_query_function_context→unknown",
     match: (t) => norm(t) === "QueryFunctionContext<unknown>",
   },
+  // 18e
   {
     key: "astro_infer_get_static_props_type",
     name: "astro_infer_get_static_props_type→unknown",
     match: (t) => norm(t) === "InferGetStaticPropsType<unknown>",
   },
+  // 18f
   {
     key: "astro_infer_get_static_paths_type",
     name: "astro_infer_get_static_paths_type→unknown",
     match: (t) => norm(t) === "InferGetStaticPathsType<unknown>",
   },
+  // 18g
   { key: "astro_api_route", name: "astro_api_route→unknown", match: (t) => t === "unknown" },
+  // 18h
   { key: "astro_get_static_paths", name: "astro_get_static_paths→unknown", match: (t) => t === "unknown" },
+  // 19
   { key: "astro_collection_entry", name: "astro_collection_entry→any", match: (t) => t === "CollectionEntry<any>" },
 ];
 
