@@ -49,6 +49,9 @@ class TrainConfig:
     eval_every: int = 10          # epochs between eval_fn invocations (0 disables)
     log_every_batches: int = 0    # per-batch progress logs (0 disables)
     seed: int = 42
+    lr_schedule: str = "none"          # "none" | "cosine" | "plateau"
+    lr_schedule_patience: int = 5      # for "plateau": epochs without loss improvement
+    lr_schedule_factor: float = 0.5    # for "plateau": multiplicative LR reduction
 
 
 @dataclass
@@ -66,7 +69,7 @@ class EpochStats:
 Batch       = Tuple[torch.Tensor, torch.Tensor, torch.Tensor]   # (src, tgt_in, tgt_target)
 BatchSource = Callable[[], Iterable[Batch]]
 EvalFn      = Callable[[EncoderDecoderModel], float]
-EpochHook   = Callable[[EpochStats], None]
+EpochHook   = Callable[[EpochStats], Optional[bool]]
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -126,6 +129,19 @@ def train(
     )
     loss_fn = nn.CrossEntropyLoss(ignore_index=pad_id)
 
+    scheduler = None
+    if cfg.lr_schedule == "cosine":
+        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+            optimizer, T_max=cfg.epochs
+        )
+    elif cfg.lr_schedule == "plateau":
+        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+            optimizer,
+            mode     = "min",
+            patience = cfg.lr_schedule_patience,
+            factor   = cfg.lr_schedule_factor,
+        )
+
     for epoch in range(1, cfg.epochs + 1):
         model.train()
         epoch_loss    = 0.0
@@ -178,6 +194,12 @@ def train(
         avg_loss = epoch_loss / num_batches if num_batches else 0.0
         tf_acc   = epoch_correct / epoch_total if epoch_total else 0.0
 
+        if scheduler is not None:
+            if cfg.lr_schedule == "plateau":
+                scheduler.step(avg_loss)
+            else:
+                scheduler.step()
+
         # Decide whether to run `eval_fn` this epoch.
         run_eval = (
             eval_fn is not None
@@ -187,10 +209,12 @@ def train(
         val_metric = eval_fn(model) if run_eval else None
 
         if on_epoch_end is not None:
-            on_epoch_end(EpochStats(
+            stop = on_epoch_end(EpochStats(
                 epoch        = epoch,
                 train_loss   = avg_loss,
                 train_tf_acc = tf_acc,
                 val_metric   = val_metric,
                 elapsed_s    = time.time() - t_epoch,
             ))
+            if stop:
+                break

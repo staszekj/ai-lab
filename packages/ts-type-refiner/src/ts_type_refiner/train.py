@@ -25,7 +25,7 @@ from pathlib import Path
 
 import torch
 
-from core.checkpoint import save as save_checkpoint
+from core.checkpoint import load as load_checkpoint, save as save_checkpoint
 from core.encoder_decoder_model import EncoderDecoderModel
 from core.trainer import EpochStats, TrainConfig, train
 
@@ -35,10 +35,11 @@ from ts_type_refiner.prompt import PROMPT_VERSION
 from ts_type_refiner.validators import VALIDATORS
 
 
-DATA_PATH       = "packages/ts-type-extractor/data/encoder_decoder_pairs.jsonl"
-TOKENIZER_PATH  = "packages/ts-type-refiner/tokenizer.json"
-CHECKPOINT_DIR  = Path("packages/ts-type-refiner/checkpoints")
-CHECKPOINT_PATH = CHECKPOINT_DIR / "refiner.pt"
+DATA_PATH            = "packages/ts-type-extractor/data/encoder_decoder_pairs.jsonl"
+TOKENIZER_PATH       = "packages/ts-type-refiner/tokenizer.json"
+CHECKPOINT_DIR       = Path("packages/ts-type-refiner/checkpoints")
+CHECKPOINT_PATH      = CHECKPOINT_DIR / "refiner.pt"
+BEST_CHECKPOINT_PATH = CHECKPOINT_DIR / "refiner_best.pt"
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -188,6 +189,18 @@ def main() -> None:
         type=int,
         default=50,
     )
+    parser.add_argument(
+        "--patience",
+        type=int,
+        default=0,
+        help="Early stopping: evals without improvement before stopping. 0 = disabled.",
+    )
+    parser.add_argument(
+        "--lr-schedule",
+        choices=["none", "cosine", "plateau"],
+        default="none",
+        help="LR scheduler: 'cosine' (CosineAnnealingLR) or 'plateau' (ReduceLROnPlateau on train loss).",
+    )
     cli = parser.parse_args()
 
     # ── Device ────────────────────────────────────────────────────────
@@ -238,6 +251,7 @@ def main() -> None:
         eval_every        = 10,
         log_every_batches = 25,   # heartbeat — slow GPUs need to show signs of life mid-epoch
         seed              = 42,
+        lr_schedule       = cli.lr_schedule,
     )
     batch_size   = 96
     eval_samples = cli.eval_samples
@@ -272,11 +286,20 @@ def main() -> None:
         return macro_acc
 
     # State captured across epochs by closures — no globals.
-    progress: dict = {"best_val": 0.0, "last_loss": 0.0, "last_acc": 0.0}
+    progress: dict = {
+        "best_val": 0.0,
+        "best_val_epoch": 0,
+        "patience_counter": 0,
+        "last_epoch": 0,
+        "last_loss": 0.0,
+        "last_acc": 0.0,
+        "stopped_early": False,
+    }
 
-    def on_epoch_end(stats: EpochStats) -> None:
-        progress["last_loss"] = stats.train_loss
-        progress["last_acc"]  = stats.train_tf_acc
+    def on_epoch_end(stats: EpochStats) -> bool | None:
+        progress["last_loss"]  = stats.train_loss
+        progress["last_acc"]   = stats.train_tf_acc
+        progress["last_epoch"] = stats.epoch
         # Always print every epoch — on weak GPUs (no tensor cores) one
         # epoch can take minutes and "every 5" is too sparse for the user
         # to see the run is making progress.
@@ -284,8 +307,33 @@ def main() -> None:
               f"loss={stats.train_loss:.4f}  "
               f"tf_acc={stats.train_tf_acc:.0%}  "
               f"{stats.elapsed_s:.1f}s", flush=True)
-        if stats.val_metric is not None and stats.val_metric > progress["best_val"]:
-            progress["best_val"] = stats.val_metric
+        if stats.val_metric is not None:
+            if stats.val_metric > progress["best_val"]:
+                progress["best_val"]         = stats.val_metric
+                progress["best_val_epoch"]   = stats.epoch
+                progress["patience_counter"] = 0
+                save_checkpoint(
+                    model, BEST_CHECKPOINT_PATH,
+                    model_config   = model_config,
+                    epoch          = stats.epoch,
+                    loss           = stats.train_loss,
+                    val_accuracy   = stats.val_metric,
+                    prompt_version = PROMPT_VERSION,
+                )
+                print(f"    ✓ new best {stats.val_metric:.1%} @ epoch {stats.epoch}"
+                      f" → {BEST_CHECKPOINT_PATH.name}", flush=True)
+            elif cli.patience > 0:
+                progress["patience_counter"] += 1
+                remaining = cli.patience - progress["patience_counter"]
+                print(f"    no improvement "
+                      f"({progress['patience_counter']}/{cli.patience},"
+                      f" {remaining} evals left)", flush=True)
+                if progress["patience_counter"] >= cli.patience:
+                    print(f"  *** Early stopping at epoch {stats.epoch} ***",
+                          flush=True)
+                    progress["stopped_early"] = True
+                    return True
+        return None
 
     # ── Train ─────────────────────────────────────────────────────────
     train(
@@ -296,6 +344,13 @@ def main() -> None:
         eval_fn       = eval_fn,
         on_epoch_end  = on_epoch_end,
     )
+
+    # ── Restore best weights ──────────────────────────────────────────
+    if BEST_CHECKPOINT_PATH.exists():
+        ckpt = load_checkpoint(BEST_CHECKPOINT_PATH, device)
+        model.load_state_dict(ckpt.state_dict)
+        print(f"\nRestored best model: epoch {progress['best_val_epoch']},"
+              f" val={progress['best_val']:.1%}")
 
     # ── Final evaluation ──────────────────────────────────────────────
     print(f"\n{'='*60}")
@@ -316,9 +371,14 @@ def main() -> None:
     print(f"{'='*60}")
     print(f"  Model:      {total_params:,} params on {device}")
     print(f"  Data:       {len(train_idx)} train / {len(val_idx)} val")
-    print(f"  Training:   {train_cfg.epochs} epochs, "
-          f"final loss={progress['last_loss']:.4f}, "
+    print(f"  Training:   {train_cfg.epochs} epochs max, "
+          f"ran {progress['last_epoch']} epochs, "
+          f"lr_schedule={cli.lr_schedule}")
+    print(f"  Final loss: {progress['last_loss']:.4f}  "
           f"tf_acc={progress['last_acc']:.0%}")
+    if progress["stopped_early"]:
+        print(f"  Stopped:    early (patience={cli.patience} evals)")
+    print(f"  Best epoch:                {progress['best_val_epoch']}")
     print(f"  Val exact-match (micro):   {val_em:.1%}")
     print(f"  Val macro acceptable:      {val_macro_acc:.1%}")
     print(f"  Best val (during train):   {progress['best_val']:.1%}")
@@ -328,10 +388,12 @@ def main() -> None:
     save_checkpoint(
         model,
         CHECKPOINT_PATH,
-        model_config = model_config,
-        epoch        = train_cfg.epochs,
-        loss         = progress["last_loss"],
-        val_accuracy = val_em,        prompt_version = PROMPT_VERSION,    )
+        model_config   = model_config,
+        epoch          = progress["best_val_epoch"],
+        loss           = progress["last_loss"],
+        val_accuracy   = val_em,
+        prompt_version = PROMPT_VERSION,
+    )
 
     print(f"\n  Checkpoint saved: {CHECKPOINT_PATH}")
     print(f"  Tokenizer saved:  {TOKENIZER_PATH}")
