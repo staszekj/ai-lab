@@ -186,7 +186,6 @@ class TypeRefinerDataset:
         for start in range(0, len(drawn), batch_size):
             batch_idx = drawn[start : start + batch_size]
             yield self.get_batch(batch_idx, device=device)
-            yield self.get_batch(batch_idx, device=device)
 
 
 def train_val_split(
