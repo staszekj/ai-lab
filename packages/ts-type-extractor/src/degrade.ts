@@ -123,28 +123,28 @@ function isStringLiteral(tok: string): boolean {
 // Rule numbering mirrors validators.py (ts-type-refiner) and refiner-locate.ts RULES — keep in sync.
 const DEGRADATION_RULES: DegradationRule[] = [
   // React ecosystem
-  // 1
+  // 1  e.g.  React.MouseEventHandler<HTMLButtonElement>  →  React.EventHandler<React.SyntheticEvent>
   (t) => {
     if (/^React\.\w+EventHandler(?:<.+>)?$/.test(t) && t !== "React.EventHandler<React.SyntheticEvent>") {
       return { degraded: "React.EventHandler<React.SyntheticEvent>", rule: "react_event_handler→generic" };
     }
     return null;
   },
-  // 1b
+  // 1b  e.g.  MouseEventHandler<HTMLButtonElement>  →  React.EventHandler<React.SyntheticEvent>
   (t) => {
     if (/^(Mouse|Keyboard|Pointer|Touch|Drag|Focus|Change|Clipboard|Composition|Animation|Transition|Form|Wheel)EventHandler(?:<.+>)?$/.test(t)) {
       return { degraded: "React.EventHandler<React.SyntheticEvent>", rule: "react_specific_event_handler_alias→generic" };
     }
     return null;
   },
-  // 2
+  // 2  e.g.  React.MouseEvent<HTMLButtonElement>  →  React.SyntheticEvent
   (t) => {
     if (/^React\.\w+Event(?:<.+>)?$/.test(t) && t !== "React.SyntheticEvent") {
       return { degraded: "React.SyntheticEvent", rule: "react_event→synthetic" };
     }
     return null;
   },
-  // 3
+  // 3  e.g.  React.ComponentPropsWithRef<'button'>  →  React.ComponentPropsWithRef<any>
   (t) => {
     const m = t.match(/^React\.ComponentPropsWithRef<(.+)>$/);
     if (m && m[1].trim() !== "any") {
@@ -152,7 +152,7 @@ const DEGRADATION_RULES: DegradationRule[] = [
     }
     return null;
   },
-  // 4
+  // 4  e.g.  React.ComponentPropsWithoutRef<'input'>  →  React.ComponentPropsWithoutRef<any>
   (t) => {
     const m = t.match(/^React\.ComponentPropsWithoutRef<(.+)>$/);
     if (m && m[1].trim() !== "any") {
@@ -160,7 +160,7 @@ const DEGRADATION_RULES: DegradationRule[] = [
     }
     return null;
   },
-  // 5
+  // 5  e.g.  React.ElementRef<typeof Button>  →  React.ElementRef<any>
   (t) => {
     const m = t.match(/^React\.ElementRef<(.+)>$/);
     if (m && m[1].trim() !== "any") {
@@ -168,7 +168,7 @@ const DEGRADATION_RULES: DegradationRule[] = [
     }
     return null;
   },
-  // 6
+  // 6  e.g.  React.RefObject<HTMLDivElement>  →  React.RefObject<unknown>
   (t) => {
     const m = t.match(/^React\.RefObject<(.+)>$/);
     if (m && !["unknown", "any"].includes(m[1].trim())) {
@@ -176,7 +176,7 @@ const DEGRADATION_RULES: DegradationRule[] = [
     }
     return null;
   },
-  // 7
+  // 7  e.g.  React.MutableRefObject<boolean>  →  React.MutableRefObject<unknown>
   (t) => {
     const m = t.match(/^React\.MutableRefObject<(.+)>$/);
     if (m && !["unknown", "any"].includes(m[1].trim())) {
@@ -184,7 +184,7 @@ const DEGRADATION_RULES: DegradationRule[] = [
     }
     return null;
   },
-  // 8
+  // 8  e.g.  React.Dispatch<React.SetStateAction<string>>  →  React.Dispatch<React.SetStateAction<unknown>>
   (t) => {
     const m = t.match(/^React\.Dispatch<\s*React\.SetStateAction<(.+)>\s*>$/);
     if (m && !["unknown", "any"].includes(m[1].trim())) {
@@ -195,7 +195,7 @@ const DEGRADATION_RULES: DegradationRule[] = [
     }
     return null;
   },
-  // 9
+  // 9  e.g.  keyof JSX.IntrinsicElements  →  string
   (t) => {
     if (norm(t) === "keyof JSX.IntrinsicElements") {
       return { degraded: "string", rule: "jsx_intrinsic_keyof→string" };
@@ -204,7 +204,7 @@ const DEGRADATION_RULES: DegradationRule[] = [
   },
 
   // Literal / template families
-  // 10
+  // 10  e.g.  "primary" | "secondary" | "danger"  →  string
   (t) => {
     const parts = splitUnion(t);
     if (parts.length >= 2 && parts.every(isStringLiteral)) {
@@ -212,7 +212,7 @@ const DEGRADATION_RULES: DegradationRule[] = [
     }
     return null;
   },
-  // 11
+  // 11  e.g.  `--${string}`  or  `${ColorName}-${Shade}`  →  string
   (t) => {
     if (t.includes("`") && t !== "string") {
       return { degraded: "string", rule: "template_literal_type→string" };
@@ -221,21 +221,21 @@ const DEGRADATION_RULES: DegradationRule[] = [
   },
 
   // Native browser + custom elements
-  // 11b
+  // 11b  e.g.  HTMLInputElement  →  HTMLElement
   (t) => {
     if (/^HTML\w+Element$/.test(t) && t !== "HTMLElement") {
       return { degraded: "HTMLElement", rule: "html_specific_element→html_element" };
     }
     return null;
   },
-  // 11c
+  // 11c  e.g.  HTMLInputElement | null  →  HTMLElement | null
   (t) => {
     if (/^HTML\w+Element\s*\|\s*null$/.test(t) && t !== "HTMLElement | null") {
       return { degraded: "HTMLElement | null", rule: "html_specific_element_nullable→html_element_nullable" };
     }
     return null;
   },
-  // 11d
+  // 11d  e.g.  CustomEvent<{ action: string; payload: unknown }>  →  CustomEvent<unknown>
   (t) => {
     const m = t.match(/^CustomEvent<(.+)>$/);
     if (m && !["unknown", "any"].includes(m[1].trim())) {
@@ -243,7 +243,7 @@ const DEGRADATION_RULES: DegradationRule[] = [
     }
     return null;
   },
-  // 11e
+  // 11e  e.g.  Record<string, string>  →  Record<string, unknown>
   (t) => {
     const m = t.match(/^Record<\s*string\s*,\s*(.+)\s*>$/);
     if (m && !["unknown", "any"].includes(m[1].trim())) {
@@ -251,7 +251,7 @@ const DEGRADATION_RULES: DegradationRule[] = [
     }
     return null;
   },
-  // 11f
+  // 11f  e.g.  Map<string, number>  →  Map<unknown, unknown>
   (t) => {
     const m = t.match(/^Map<\s*(.+?)\s*,\s*(.+?)\s*>$/);
     if (m && !(m[1].trim() === "unknown" && m[2].trim() === "unknown")) {
@@ -259,7 +259,7 @@ const DEGRADATION_RULES: DegradationRule[] = [
     }
     return null;
   },
-  // 11g
+  // 11g  e.g.  Set<string>  →  Set<unknown>
   (t) => {
     const m = t.match(/^Set<\s*(.+?)\s*>$/);
     if (m && !["unknown", "any"].includes(m[1].trim())) {
@@ -267,7 +267,7 @@ const DEGRADATION_RULES: DegradationRule[] = [
     }
     return null;
   },
-  // 11h
+  // 11h  e.g.  AddEventListenerOptions  →  EventListenerOptions
   (t) => {
     if (t === "AddEventListenerOptions") {
       return { degraded: "EventListenerOptions", rule: "dom_add_event_listener_options→event_listener_options" };
@@ -276,56 +276,56 @@ const DEGRADATION_RULES: DegradationRule[] = [
   },
 
   // Ambiguous UNKNOWN families (locator will emit multi-hypothesis)
-  // 12
+  // 12  e.g.  T extends string ? "text" : "other"  →  unknown
   (t) => {
     if (/\bextends\b/.test(t) && /\?/.test(t) && /:/.test(t)) {
       return { degraded: "unknown", rule: "conditional_type→unknown" };
     }
     return null;
   },
-  // 13
+  // 13  e.g.  ButtonProps['variant']  →  unknown
   (t) => {
     if (/^[A-Za-z0-9_$.<>,\s]+\[[^\]]+\]$/.test(t) && !t.endsWith("[]")) {
       return { degraded: "unknown", rule: "indexed_access_type→unknown" };
     }
     return null;
   },
-  // 14
+  // 14  e.g.  Partial<User>  or  Pick<Config, 'host' | 'port'>  or  ReturnType<typeof fn>  →  unknown
   (t) => {
     if (/^(Extract|Exclude|Pick|Omit|Partial|Required|Readonly|NonNullable|Parameters|ReturnType|InstanceType|Awaited)</.test(t)) {
       return { degraded: "unknown", rule: "utility_type→unknown" };
     }
     return null;
   },
-  // 14b
+  // 14b  e.g.  MutationObserverInit  →  unknown
   (t) => {
     if (t === "MutationObserverInit") {
       return { degraded: "unknown", rule: "dom_mutation_observer_init→unknown" };
     }
     return null;
   },
-  // 14c
+  // 14c  e.g.  IntersectionObserverInit  →  unknown
   (t) => {
     if (t === "IntersectionObserverInit") {
       return { degraded: "unknown", rule: "dom_intersection_observer_init→unknown" };
     }
     return null;
   },
-  // 14d
+  // 14d  e.g.  ShadowRootInit  →  unknown
   (t) => {
     if (t === "ShadowRootInit") {
       return { degraded: "unknown", rule: "dom_shadow_root_init→unknown" };
     }
     return null;
   },
-  // 14e
+  // 14e  e.g.  CSSStyleDeclaration  →  unknown
   (t) => {
     if (t === "CSSStyleDeclaration") {
       return { degraded: "unknown", rule: "dom_css_style_declaration→unknown" };
     }
     return null;
   },
-  // 14f
+  // 14f  e.g.  ElementInternals & { form: HTMLFormElement }  →  unknown
   (t) => {
     if (/^ElementInternals\s*&\s*.+$/.test(t)) {
       return { degraded: "unknown", rule: "dom_element_internals_intersection→unknown" };
@@ -334,7 +334,7 @@ const DEGRADATION_RULES: DegradationRule[] = [
   },
 
   // Generic wrappers from type-defs
-  // 15
+  // 15  e.g.  Promise<User>  →  Promise<unknown>
   (t) => {
     const m = t.match(/^Promise<(.+)>$/);
     if (m && !SIMPLE_TYPES.has(m[1].trim())) {
@@ -342,7 +342,7 @@ const DEGRADATION_RULES: DegradationRule[] = [
     }
     return null;
   },
-  // 16
+  // 16  e.g.  ReadonlyArray<string>  →  ReadonlyArray<unknown>
   (t) => {
     const m = t.match(/^ReadonlyArray<(.+)>$/);
     if (m && !["unknown", "any"].includes(m[1].trim())) {
@@ -350,7 +350,7 @@ const DEGRADATION_RULES: DegradationRule[] = [
     }
     return null;
   },
-  // 17
+  // 17  e.g.  UseQueryResult<User[], Error>  →  UseQueryResult<unknown, unknown>
   (t) => {
     const m = t.match(/^UseQueryResult<\s*(.+?)\s*,\s*(.+?)\s*>$/);
     if (m && !(m[1].trim() === "unknown" && m[2].trim() === "unknown")) {
@@ -358,7 +358,7 @@ const DEGRADATION_RULES: DegradationRule[] = [
     }
     return null;
   },
-  // 18
+  // 18  e.g.  UseInfiniteQueryResult<Post[], Error>  →  UseInfiniteQueryResult<unknown, unknown>
   (t) => {
     const m = t.match(/^UseInfiniteQueryResult<\s*(.+?)\s*,\s*(.+?)\s*>$/);
     if (m && !(m[1].trim() === "unknown" && m[2].trim() === "unknown")) {
@@ -369,7 +369,7 @@ const DEGRADATION_RULES: DegradationRule[] = [
     }
     return null;
   },
-  // 18b
+  // 18b  e.g.  QueryObserverResult<User, Error>  →  QueryObserverResult<unknown, unknown>
   (t) => {
     const m = t.match(/^QueryObserverResult<\s*(.+?)\s*,\s*(.+?)\s*>$/);
     if (m && !(m[1].trim() === "unknown" && m[2].trim() === "unknown")) {
@@ -380,7 +380,7 @@ const DEGRADATION_RULES: DegradationRule[] = [
     }
     return null;
   },
-  // 18c
+  // 18c  e.g.  InfiniteData<Post[], number>  →  InfiniteData<unknown, unknown>
   (t) => {
     const m = t.match(/^InfiniteData<\s*(.+?)(?:\s*,\s*(.+?)\s*)?>$/);
     if (!m) return null;
@@ -392,7 +392,7 @@ const DEGRADATION_RULES: DegradationRule[] = [
       rule: "tanstack_infinite_data→unknown",
     };
   },
-  // 18cc
+  // 18cc  e.g.  InfiniteQueryObserverResult<Post[], Error>  →  InfiniteQueryObserverResult<unknown, unknown>
   (t) => {
     const m = t.match(/^InfiniteQueryObserverResult<\s*(.+?)\s*,\s*(.+?)\s*>$/);
     if (m && !(m[1].trim() === "unknown" && m[2].trim() === "unknown")) {
@@ -403,7 +403,7 @@ const DEGRADATION_RULES: DegradationRule[] = [
     }
     return null;
   },
-  // 18d
+  // 18d  e.g.  QueryFunctionContext<['users', number]>  →  QueryFunctionContext<unknown>
   (t) => {
     const m = t.match(/^QueryFunctionContext<\s*(.+)\s*>$/);
     if (m && m[1].trim() !== "unknown") {
@@ -416,7 +416,7 @@ const DEGRADATION_RULES: DegradationRule[] = [
   },
 
   // Astro
-  // 18e
+  // 18e  e.g.  InferGetStaticPropsType<typeof getStaticProps>  →  InferGetStaticPropsType<unknown>
   (t) => {
     const m = t.match(/^InferGetStaticPropsType<(.+)>$/);
     if (m && m[1].trim() !== "unknown") {
@@ -427,7 +427,7 @@ const DEGRADATION_RULES: DegradationRule[] = [
     }
     return null;
   },
-  // 18f
+  // 18f  e.g.  InferGetStaticPathsType<typeof getStaticPaths>  →  InferGetStaticPathsType<unknown>
   (t) => {
     const m = t.match(/^InferGetStaticPathsType<(.+)>$/);
     if (m && m[1].trim() !== "unknown") {
@@ -438,7 +438,7 @@ const DEGRADATION_RULES: DegradationRule[] = [
     }
     return null;
   },
-  // 18g
+  // 18g  e.g.  APIRoute  →  unknown
   (t) => {
     if (t === "APIRoute") {
       return {
@@ -448,7 +448,7 @@ const DEGRADATION_RULES: DegradationRule[] = [
     }
     return null;
   },
-  // 18h
+  // 18h  e.g.  GetStaticPaths  →  unknown
   (t) => {
     if (t === "GetStaticPaths") {
       return {
@@ -458,7 +458,7 @@ const DEGRADATION_RULES: DegradationRule[] = [
     }
     return null;
   },
-  // 19
+  // 19  e.g.  CollectionEntry<'blog'>  →  CollectionEntry<any>
   (t) => {
     const m = t.match(/^CollectionEntry<(.+)>$/);
     if (m && m[1].trim() !== "any") {

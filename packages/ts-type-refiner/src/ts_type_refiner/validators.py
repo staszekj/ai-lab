@@ -35,6 +35,7 @@ _RE_REACT_EVENT_HANDLER = re.compile(r"^React\.\w+EventHandler(?:<.+>)?$")
 
 
 def validate_react_event_handler(s: str) -> Tuple[bool, str]:
+    # e.g.  React.MouseEventHandler<HTMLButtonElement>  →  React.EventHandler<React.SyntheticEvent>
     s = _strip(s)
     if not _RE_REACT_EVENT_HANDLER.match(s):
         return _fail("expected React.<Specific>EventHandler[<…>]")
@@ -50,6 +51,7 @@ _RE_REACT_SPECIFIC_HANDLER_ALIAS = re.compile(
 
 
 def validate_react_specific_event_handler_alias(s: str) -> Tuple[bool, str]:
+    # e.g.  MouseEventHandler<HTMLButtonElement>  →  React.EventHandler<React.SyntheticEvent>
     s = _strip(s)
     if not _RE_REACT_SPECIFIC_HANDLER_ALIAS.match(s):
         return _fail("expected specific React event handler alias")
@@ -61,6 +63,7 @@ _RE_REACT_EVENT = re.compile(r"^React\.\w+Event(?:<.+>)?$")
 
 
 def validate_react_event(s: str) -> Tuple[bool, str]:
+    # e.g.  React.MouseEvent<HTMLButtonElement>  →  React.SyntheticEvent
     s = _strip(s)
     if not _RE_REACT_EVENT.match(s):
         return _fail("expected React.<Specific>Event[<…>]")
@@ -74,6 +77,7 @@ _RE_CPWR = re.compile(r"^React\.ComponentPropsWithRef<(.+)>$")
 
 
 def validate_react_component_props_with_ref(s: str) -> Tuple[bool, str]:
+    # e.g.  React.ComponentPropsWithRef<'button'>  →  React.ComponentPropsWithRef<any>
     s = _strip(s)
     m = _RE_CPWR.match(s)
     if not m:
@@ -88,6 +92,7 @@ _RE_CPWOR = re.compile(r"^React\.ComponentPropsWithoutRef<(.+)>$")
 
 
 def validate_react_component_props_without_ref(s: str) -> Tuple[bool, str]:
+    # e.g.  React.ComponentPropsWithoutRef<'input'>  →  React.ComponentPropsWithoutRef<any>
     s = _strip(s)
     m = _RE_CPWOR.match(s)
     if not m:
@@ -102,6 +107,7 @@ _RE_ELEMENT_REF = re.compile(r"^React\.ElementRef<(.+)>$")
 
 
 def validate_react_element_ref(s: str) -> Tuple[bool, str]:
+    # e.g.  React.ElementRef<typeof Button>  →  React.ElementRef<any>
     s = _strip(s)
     m = _RE_ELEMENT_REF.match(s)
     if not m:
@@ -116,6 +122,7 @@ _RE_REFOBJECT = re.compile(r"^React\.RefObject<(.+)>$")
 
 
 def validate_react_refobject(s: str) -> Tuple[bool, str]:
+    # e.g.  React.RefObject<HTMLDivElement>  →  React.RefObject<unknown>
     s = _strip(s)
     m = _RE_REFOBJECT.match(s)
     if not m:
@@ -131,6 +138,7 @@ _RE_MUT_REFOBJECT = re.compile(r"^React\.MutableRefObject<(.+)>$")
 
 
 def validate_react_mutable_refobject(s: str) -> Tuple[bool, str]:
+    # e.g.  React.MutableRefObject<boolean>  →  React.MutableRefObject<unknown>
     s = _strip(s)
     m = _RE_MUT_REFOBJECT.match(s)
     if not m:
@@ -146,6 +154,7 @@ _RE_DISPATCH_SSA = re.compile(r"^React\.Dispatch<\s*React\.SetStateAction<(.+)>\
 
 
 def validate_react_dispatch_setstateaction(s: str) -> Tuple[bool, str]:
+    # e.g.  React.Dispatch<React.SetStateAction<string>>  →  React.Dispatch<React.SetStateAction<unknown>>
     s = _strip(s)
     m = _RE_DISPATCH_SSA.match(s)
     if not m:
@@ -159,6 +168,7 @@ def validate_react_dispatch_setstateaction(s: str) -> Tuple[bool, str]:
 # 9
 
 def validate_jsx_intrinsic_keyof(s: str) -> Tuple[bool, str]:
+    # e.g.  keyof JSX.IntrinsicElements  →  string
     if _strip(s) == "keyof JSX.IntrinsicElements":
         return _ok()
     return _fail("expected keyof JSX.IntrinsicElements")
@@ -170,6 +180,7 @@ _RE_STR_UNION = re.compile(rf"^\s*{_RE_STR_LIT}(\s*\|\s*{_RE_STR_LIT})+\s*$")
 
 
 def validate_string_literal_union(s: str) -> Tuple[bool, str]:
+    # e.g.  "primary" | "secondary" | "danger"  →  string
     if _RE_STR_UNION.match(s):
         return _ok()
     return _fail("expected string literal union")
@@ -178,6 +189,7 @@ def validate_string_literal_union(s: str) -> Tuple[bool, str]:
 # 11
 
 def validate_template_literal_type(s: str) -> Tuple[bool, str]:
+    # e.g.  `--${string}`  or  `${ColorName}-${Shade}`  →  string
     s = _strip(s)
     if "`" in s:
         return _ok()
@@ -189,6 +201,7 @@ _RE_HTML_SPECIFIC = re.compile(r"^HTML\w+Element$")
 
 
 def validate_html_specific_element(s: str) -> Tuple[bool, str]:
+    # e.g.  HTMLInputElement  →  HTMLElement
     s = _strip(s)
     if not _RE_HTML_SPECIFIC.match(s):
         return _fail("expected HTML<Specific>Element")
@@ -202,6 +215,7 @@ _RE_HTML_SPECIFIC_NULLABLE = re.compile(r"^HTML\w+Element\s*\|\s*null$")
 
 
 def validate_html_specific_element_nullable(s: str) -> Tuple[bool, str]:
+    # e.g.  HTMLInputElement | null  →  HTMLElement | null
     s = _strip(s)
     if not _RE_HTML_SPECIFIC_NULLABLE.match(s):
         return _fail("expected HTML<Specific>Element | null")
@@ -215,6 +229,7 @@ _RE_CUSTOM_EVENT = re.compile(r"^CustomEvent<(.+)>$")
 
 
 def validate_custom_event(s: str) -> Tuple[bool, str]:
+    # e.g.  CustomEvent<{ action: string; payload: unknown }>  →  CustomEvent<unknown>
     m = _RE_CUSTOM_EVENT.match(_strip(s))
     if not m:
         return _fail("expected CustomEvent<…>")
@@ -228,6 +243,7 @@ _RE_RECORD_STRING_VALUE = re.compile(r"^Record<\s*string\s*,\s*(.+)\s*>$")
 
 
 def validate_record_string_value(s: str) -> Tuple[bool, str]:
+    # e.g.  Record<string, string>  →  Record<string, unknown>
     m = _RE_RECORD_STRING_VALUE.match(_strip(s))
     if not m:
         return _fail("expected Record<string, …>")
@@ -241,6 +257,7 @@ _RE_MAP = re.compile(r"^Map<\s*(.+?)\s*,\s*(.+?)\s*>$")
 
 
 def validate_map(s: str) -> Tuple[bool, str]:
+    # e.g.  Map<string, number>  →  Map<unknown, unknown>
     m = _RE_MAP.match(_strip(s))
     if not m:
         return _fail("expected Map<K, V>")
@@ -255,6 +272,7 @@ _RE_SET = re.compile(r"^Set<\s*(.+?)\s*>$")
 
 
 def validate_set(s: str) -> Tuple[bool, str]:
+    # e.g.  Set<string>  →  Set<unknown>
     m = _RE_SET.match(_strip(s))
     if not m:
         return _fail("expected Set<T>")
@@ -265,6 +283,7 @@ def validate_set(s: str) -> Tuple[bool, str]:
 
 # 11h
 def validate_dom_add_event_listener_options(s: str) -> Tuple[bool, str]:
+    # e.g.  AddEventListenerOptions  →  EventListenerOptions
     if _strip(s) == "AddEventListenerOptions":
         return _ok()
     return _fail("expected AddEventListenerOptions")
@@ -273,6 +292,7 @@ def validate_dom_add_event_listener_options(s: str) -> Tuple[bool, str]:
 # 12
 
 def validate_conditional_type(s: str) -> Tuple[bool, str]:
+    # e.g.  T extends string ? "text" : "other"  →  unknown
     s = _strip(s)
     if "extends" in s and "?" in s and ":" in s:
         return _ok()
@@ -284,6 +304,7 @@ _RE_INDEXED_ACCESS = re.compile(r"^[A-Za-z0-9_$.<>,\s]+\[[^\]]+\]$")
 
 
 def validate_indexed_access_type(s: str) -> Tuple[bool, str]:
+    # e.g.  ButtonProps['variant']  or  CSSProperties['color']  →  unknown
     s = _strip(s)
     if s.endswith("[]"):
         return _fail("array syntax, not indexed access")
@@ -297,6 +318,7 @@ _RE_UTILITY = re.compile(r"^(Extract|Exclude|Pick|Omit|Partial|Required|Readonly
 
 
 def validate_utility_type(s: str) -> Tuple[bool, str]:
+    # e.g.  Partial<User>  or  Pick<Config, 'host' | 'port'>  or  ReturnType<typeof fn>  →  unknown
     if _RE_UTILITY.match(_strip(s)):
         return _ok()
     return _fail("expected utility type")
@@ -304,6 +326,7 @@ def validate_utility_type(s: str) -> Tuple[bool, str]:
 
 # 14b
 def validate_dom_mutation_observer_init(s: str) -> Tuple[bool, str]:
+    # e.g.  MutationObserverInit  →  unknown
     if _strip(s) == "MutationObserverInit":
         return _ok()
     return _fail("expected MutationObserverInit")
@@ -311,6 +334,7 @@ def validate_dom_mutation_observer_init(s: str) -> Tuple[bool, str]:
 
 # 14c
 def validate_dom_intersection_observer_init(s: str) -> Tuple[bool, str]:
+    # e.g.  IntersectionObserverInit  →  unknown
     if _strip(s) == "IntersectionObserverInit":
         return _ok()
     return _fail("expected IntersectionObserverInit")
@@ -318,6 +342,7 @@ def validate_dom_intersection_observer_init(s: str) -> Tuple[bool, str]:
 
 # 14d
 def validate_dom_shadow_root_init(s: str) -> Tuple[bool, str]:
+    # e.g.  ShadowRootInit  →  unknown
     if _strip(s) == "ShadowRootInit":
         return _ok()
     return _fail("expected ShadowRootInit")
@@ -325,6 +350,7 @@ def validate_dom_shadow_root_init(s: str) -> Tuple[bool, str]:
 
 # 14e
 def validate_dom_css_style_declaration(s: str) -> Tuple[bool, str]:
+    # e.g.  CSSStyleDeclaration  →  unknown
     if _strip(s) == "CSSStyleDeclaration":
         return _ok()
     return _fail("expected CSSStyleDeclaration")
@@ -335,6 +361,7 @@ _RE_ELEMENT_INTERNALS_INTERSECTION = re.compile(r"^ElementInternals\s*&\s*.+$")
 
 
 def validate_dom_element_internals_intersection(s: str) -> Tuple[bool, str]:
+    # e.g.  ElementInternals & { form: HTMLFormElement }  →  unknown
     if _RE_ELEMENT_INTERNALS_INTERSECTION.match(_strip(s)):
         return _ok()
     return _fail("expected ElementInternals intersection type")
@@ -345,6 +372,7 @@ _RE_PROMISE = re.compile(r"^Promise<(.+)>$")
 
 
 def validate_promise(s: str) -> Tuple[bool, str]:
+    # e.g.  Promise<User>  →  Promise<unknown>
     m = _RE_PROMISE.match(_strip(s))
     if not m:
         return _fail("expected Promise<…>")
@@ -359,6 +387,7 @@ _RE_READONLY_ARRAY = re.compile(r"^ReadonlyArray<(.+)>$")
 
 
 def validate_readonly_array(s: str) -> Tuple[bool, str]:
+    # e.g.  ReadonlyArray<string>  →  ReadonlyArray<unknown>
     m = _RE_READONLY_ARRAY.match(_strip(s))
     if not m:
         return _fail("expected ReadonlyArray<…>")
@@ -373,6 +402,7 @@ _RE_USE_QUERY_RESULT = re.compile(r"^UseQueryResult<\s*(.+?)\s*,\s*(.+?)\s*>$")
 
 
 def validate_tanstack_use_query_result(s: str) -> Tuple[bool, str]:
+    # e.g.  UseQueryResult<User[], Error>  →  UseQueryResult<unknown, unknown>
     m = _RE_USE_QUERY_RESULT.match(_strip(s))
     if not m:
         return _fail("expected UseQueryResult<TData, TError>")
@@ -387,6 +417,7 @@ _RE_USE_INF_QUERY_RESULT = re.compile(r"^UseInfiniteQueryResult<\s*(.+?)\s*,\s*(
 
 
 def validate_tanstack_use_infinite_query_result(s: str) -> Tuple[bool, str]:
+    # e.g.  UseInfiniteQueryResult<Post[], Error>  →  UseInfiniteQueryResult<unknown, unknown>
     m = _RE_USE_INF_QUERY_RESULT.match(_strip(s))
     if not m:
         return _fail("expected UseInfiniteQueryResult<TData, TError>")
@@ -401,6 +432,7 @@ _RE_QUERY_OBSERVER_RESULT = re.compile(r"^QueryObserverResult<\s*(.+?)\s*,\s*(.+
 
 
 def validate_tanstack_query_observer_result(s: str) -> Tuple[bool, str]:
+    # e.g.  QueryObserverResult<User, Error>  →  QueryObserverResult<unknown, unknown>
     m = _RE_QUERY_OBSERVER_RESULT.match(_strip(s))
     if not m:
         return _fail("expected QueryObserverResult<TData, TError>")
@@ -415,6 +447,7 @@ _RE_INFINITE_DATA = re.compile(r"^InfiniteData<\s*(.+?)(?:\s*,\s*(.+?)\s*)?>$")
 
 
 def validate_tanstack_infinite_data(s: str) -> Tuple[bool, str]:
+    # e.g.  InfiniteData<Post[], number>  →  InfiniteData<unknown, unknown>
     m = _RE_INFINITE_DATA.match(_strip(s))
     if not m:
         return _fail("expected InfiniteData<TData[, TPageParam]>")
@@ -430,6 +463,7 @@ _RE_INFINITE_QUERY_OBSERVER_RESULT = re.compile(r"^InfiniteQueryObserverResult<\
 
 
 def validate_tanstack_infinite_query_observer_result(s: str) -> Tuple[bool, str]:
+    # e.g.  InfiniteQueryObserverResult<Post[], Error>  →  InfiniteQueryObserverResult<unknown, unknown>
     m = _RE_INFINITE_QUERY_OBSERVER_RESULT.match(_strip(s))
     if not m:
         return _fail("expected InfiniteQueryObserverResult<TData, TError>")
@@ -444,6 +478,7 @@ _RE_QUERY_FUNCTION_CONTEXT = re.compile(r"^QueryFunctionContext<\s*(.+)\s*>$")
 
 
 def validate_tanstack_query_function_context(s: str) -> Tuple[bool, str]:
+    # e.g.  QueryFunctionContext<['users', number]>  →  QueryFunctionContext<unknown>
     m = _RE_QUERY_FUNCTION_CONTEXT.match(_strip(s))
     if not m:
         return _fail("expected QueryFunctionContext<TQueryKey>")
@@ -457,6 +492,7 @@ _RE_ASTRO_INFER_GET_STATIC_PROPS = re.compile(r"^InferGetStaticPropsType<(.+)>$"
 
 
 def validate_astro_infer_get_static_props_type(s: str) -> Tuple[bool, str]:
+    # e.g.  InferGetStaticPropsType<typeof getStaticProps>  →  InferGetStaticPropsType<unknown>
     m = _RE_ASTRO_INFER_GET_STATIC_PROPS.match(_strip(s))
     if not m:
         return _fail("expected InferGetStaticPropsType<…>")
@@ -470,6 +506,7 @@ _RE_ASTRO_INFER_GET_STATIC_PATHS = re.compile(r"^InferGetStaticPathsType<(.+)>$"
 
 
 def validate_astro_infer_get_static_paths_type(s: str) -> Tuple[bool, str]:
+    # e.g.  InferGetStaticPathsType<typeof getStaticPaths>  →  InferGetStaticPathsType<unknown>
     m = _RE_ASTRO_INFER_GET_STATIC_PATHS.match(_strip(s))
     if not m:
         return _fail("expected InferGetStaticPathsType<…>")
@@ -480,6 +517,7 @@ def validate_astro_infer_get_static_paths_type(s: str) -> Tuple[bool, str]:
 
 # 18g
 def validate_astro_api_route(s: str) -> Tuple[bool, str]:
+    # e.g.  APIRoute  →  unknown
     if _strip(s) == "APIRoute":
         return _ok()
     return _fail("expected APIRoute")
@@ -487,6 +525,7 @@ def validate_astro_api_route(s: str) -> Tuple[bool, str]:
 
 # 18h
 def validate_astro_get_static_paths(s: str) -> Tuple[bool, str]:
+    # e.g.  GetStaticPaths  →  unknown
     if _strip(s) == "GetStaticPaths":
         return _ok()
     return _fail("expected GetStaticPaths")
@@ -497,6 +536,7 @@ _RE_ASTRO_COLLECTION_ENTRY = re.compile(r"^CollectionEntry<(.+)>$")
 
 
 def validate_astro_collection_entry(s: str) -> Tuple[bool, str]:
+    # e.g.  CollectionEntry<'blog'>  →  CollectionEntry<any>
     m = _RE_ASTRO_COLLECTION_ENTRY.match(_strip(s))
     if not m:
         return _fail("expected CollectionEntry<…>")
