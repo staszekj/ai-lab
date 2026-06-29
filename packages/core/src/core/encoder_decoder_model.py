@@ -75,6 +75,13 @@ import torch
 import torch.nn as nn
 
 
+# [LoRA] LoRA (Low-Rank Adaptation) is a parameter-efficient fine-tuning method.
+# [LoRA] Instead of updating full pretrained weights W, we freeze W and learn
+# [LoRA] a low-rank update DeltaW = B @ A, so only small adapter matrices train.
+# [LoRA] This keeps most model behavior intact while reducing trainable params
+# [LoRA] and VRAM needs.
+
+
 # ══════════════════════════════════════════════════════════════════════
 # MICRO-MODEL — reference dimensions used in all inline comments
 # ══════════════════════════════════════════════════════════════════════
@@ -148,16 +155,31 @@ class ManualTransformerEncoderBlock(nn.Module):
 
         # Attention projections — Q/K/V/O are all (d_model → d_model).
         # Q,K,V split into heads via reshape inside forward().
+        # [LoRA] Candidate target: encoder self-attention query projection (Q).
+        # [LoRA] Adapting Q changes what each source token asks from context.
         self.W_Q = nn.Linear(d_model, d_model)
+        # [LoRA] Candidate target: encoder self-attention key projection (K).
+        # [LoRA] Adapting K changes how source tokens expose retrievable features.
         self.W_K = nn.Linear(d_model, d_model)
+        # [LoRA] Candidate target: encoder self-attention value projection (V).
+        # [LoRA] Adapting V changes which source features are returned.
         self.W_V = nn.Linear(d_model, d_model)
+        # [LoRA] Candidate target: encoder self-attention output projection (O).
+        # [LoRA] Adapting O changes how multi-head outputs are recombined.
         self.W_O = nn.Linear(d_model, d_model)
 
         # Feed-forward network: expand to d_ff, GELU, compress back.
         # d_ff is conventionally 4 × d_model.
+        # [LoRA] Candidate target: FFN expansion (d_model -> d_ff).
+        # [LoRA] This often provides strong adaptation with low-rank updates.
         self.ffn_linear1 = nn.Linear(d_model, d_ff)
         self.ffn_gelu    = nn.GELU()
+        # [LoRA] Candidate target: FFN compression (d_ff -> d_model).
         self.ffn_linear2 = nn.Linear(d_ff, d_model)
+
+        # [LoRA] Showcase-only pseudo integration (commented, non-executable):
+        # [LoRA] W_eff = W_frozen + (B @ A) * (alpha / r)
+        # [LoRA] Typical first targets in this block: W_Q, W_V, ffn_linear1.
 
         # Pre-LN: one LayerNorm before each sub-layer.
         self.layer_norm_1 = nn.LayerNorm(d_model)  # before attention
@@ -317,6 +339,7 @@ class ManualDecoderBlock(nn.Module):
         self.scale = math.sqrt(self.d_k)
 
         # Sub-layer 1: masked self-attention (Q,K,V all from decoder).
+        # [LoRA] Candidate target: decoder masked self-attention projections.
         self.self_W_Q = nn.Linear(d_model, d_model)
         self.self_W_K = nn.Linear(d_model, d_model)
         self.self_W_V = nn.Linear(d_model, d_model)
@@ -325,14 +348,29 @@ class ManualDecoderBlock(nn.Module):
         # Sub-layer 2: cross-attention. K and V come from encoder_output.
         # These are SEPARATE matrices from the self-attention ones — they
         # learn different transformations.
+        # [LoRA] High-priority target: cross-attention query projection (Q).
+        # [LoRA] This controls what decoder states ask from encoder memory.
         self.cross_W_Q = nn.Linear(d_model, d_model)
+        # [LoRA] High-priority target: cross-attention key projection (K).
+        # [LoRA] This controls how encoder memory is indexed for retrieval.
         self.cross_W_K = nn.Linear(d_model, d_model)
+        # [LoRA] High-priority target: cross-attention value projection (V).
+        # [LoRA] This controls which encoder content is injected into decoder.
         self.cross_W_V = nn.Linear(d_model, d_model)
+        # [LoRA] Candidate target: cross-attention output projection (O).
+        # [LoRA] This controls post-attention mixing into decoder hidden states.
         self.cross_W_O = nn.Linear(d_model, d_model)
 
+        # [LoRA] Showcase-only pseudo integration (commented, non-executable):
+        # [LoRA] Replace selected Linear layers with LoRA-wrapped equivalents.
+        # [LoRA] Train only adapter matrices A/B; keep base W frozen.
+        # [LoRA] Suggested first targets: cross_W_Q, cross_W_K, cross_W_V, cross_W_O.
+
         # Sub-layer 3: feed-forward network.
+        # [LoRA] Candidate target: decoder FFN expansion (d_model -> d_ff).
         self.ffn_linear1 = nn.Linear(d_model, d_ff)
         self.ffn_gelu    = nn.GELU()
+        # [LoRA] Candidate target: decoder FFN compression (d_ff -> d_model).
         self.ffn_linear2 = nn.Linear(d_ff, d_model)
 
         # Pre-LN: one LayerNorm before each sub-layer.
@@ -687,6 +725,9 @@ class EncoderDecoderModel(nn.Module):
 
         # Language modelling head: project decoder output to vocab logits.
         # → presentation STEP 4: (tgt_len, d_model) @ (d_model, vocab) projection.
+        # [LoRA] Optional target: LM head projection.
+        # [LoRA] Usually lower priority than cross-attention unless vocabulary
+        # [LoRA] behavior itself must shift strongly.
         self.lm_head = nn.Linear(d_model, vocab_size, bias=False)
 
     # ------------------------------------------------------------------
