@@ -107,7 +107,7 @@ function main() {
 
   runOrThrow("npx", [
     "tsx",
-    "src/degrade.ts",
+    "src/rules/degrade.ts",
     extractOut,
     "--output",
     pairsOut,

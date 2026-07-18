@@ -29,7 +29,7 @@ from typing import Callable, List
 import torch
 import torch.nn.functional as F
 
-from .encoder_decoder_model import EncoderDecoderModel
+from ts_type_refiner.encoder_decoder_model import EncoderDecoderModel
 
 
 # ══════════════════════════════════════════════════════════════════════

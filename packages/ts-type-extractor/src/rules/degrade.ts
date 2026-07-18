@@ -11,8 +11,8 @@
 import * as fs from "fs";
 import * as path from "path";
 import * as crypto from "crypto";
-import { applyContainingBoost } from "./siblings.js";
-import { collectNegatives } from "./negatives.js";
+import { applyContainingBoost } from "../siblings.js";
+import { collectNegatives } from "../negatives.js";
 
 interface TypeAnnotation {
   repo?: string;

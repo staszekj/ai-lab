@@ -83,7 +83,7 @@ Emitted record (one per JSONL line):
 ### `degrade.ts`
 
 ```
-npx tsx src/degrade.ts <extracted.jsonl> [--output pairs.jsonl]
+npx tsx src/rules/degrade.ts <extracted.jsonl> [--output pairs.jsonl]
 ```
 
 Applies 27 degradation rules sequentially (first match wins). For each match:
@@ -107,7 +107,7 @@ Progress: prints `i/total (pct%) pairs=N rate ETA` every 2 s or 10 000 rows.
 ### `refiner-locate.ts`
 
 ```
-npx tsx src/refiner-locate.ts <path...> [--context 0] \
+npx tsx src/rules/refiner-locate.ts <path...> [--context 0] \
     [--output candidates.jsonl] [--rule <name|all>]
 ```
 

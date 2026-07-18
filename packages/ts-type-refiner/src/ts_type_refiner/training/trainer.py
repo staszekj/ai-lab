@@ -31,7 +31,7 @@ from typing import Callable, Iterable, Optional, Tuple
 import torch
 import torch.nn as nn
 
-from .encoder_decoder_model import EncoderDecoderModel
+from ts_type_refiner.encoder_decoder_model import EncoderDecoderModel
 
 
 # ══════════════════════════════════════════════════════════════════════

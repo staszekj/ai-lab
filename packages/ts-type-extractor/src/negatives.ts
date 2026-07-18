@@ -10,7 +10,7 @@
  * shared between the locator and this module).
  */
 
-import { RULES } from "./refiner-locate.js";
+import { RULES } from "./rules/refiner-locate.js";
 
 const norm = (s: string): string => s.replace(/\s+/g, " ").trim();
 

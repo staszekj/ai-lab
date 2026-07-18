@@ -185,7 +185,7 @@ function main(): void {
   //   }
   banner("[1/3] refiner-locate");
   const locateArgs = [
-    "tsx", "src/refiner-locate.ts",
+    "tsx", "src/rules/refiner-locate.ts",
     ...args.targets,
     "--output", CANDIDATES,
   ];

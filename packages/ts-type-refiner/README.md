@@ -16,10 +16,10 @@ The companion package `ts-type-extractor` produces both the training data
 | Module | Purpose |
 |---|---|
 | `ts_type_refiner.tokenizer` | BPE tokenizer (HuggingFace `tokenizers`) with `<pad>` `<bos>` `<eos>` `<unk>` |
-| `ts_type_refiner.dataset` | Loads `training_pairs.jsonl`, builds padded teacher-forced batches |
-| `ts_type_refiner.validators` | 24 shape-regex validators, one per degradation rule, plus `VALIDATORS` dict |
-| `ts_type_refiner.train` | Orchestrator: tokenizer → dataset → model → `ts_type_refiner.trainer.train` → checkpoint |
-| `ts_type_refiner.infer` | Orchestrator: load checkpoint → `ts_type_refiner.predictor` → validate → write edits |
+| `ts_type_refiner.training.dataset` | Loads `training_pairs.jsonl`, builds padded teacher-forced batches |
+| `ts_type_refiner.rules.validators` | 24 shape-regex validators, one per degradation rule, plus `VALIDATORS` dict |
+| `ts_type_refiner.training.train` | Orchestrator: tokenizer → dataset → model → `ts_type_refiner.training.trainer.train` → checkpoint |
+| `ts_type_refiner.inference.infer` | Orchestrator: load checkpoint → `ts_type_refiner.inference.predictor` → validate → write edits |
 
 ---
 
@@ -57,10 +57,10 @@ text = tok.decode(ids)               # skip_special=True by default
 tok.pad_id  tok.bos_id  tok.eos_id  tok.unk_id  tok.vocab_size
 ```
 
-### `dataset.TypeRefinerDataset`
+### `training.dataset.TypeRefinerDataset`
 
 ```python
-from ts_type_refiner.dataset import TypeRefinerDataset, train_val_split
+from ts_type_refiner.training.dataset import TypeRefinerDataset, train_val_split
 
 ds = TypeRefinerDataset("training_pairs.jsonl", tok, max_src_len=256, max_tgt_len=64)
 train_idx, val_idx = train_val_split(ds, val_ratio=0.15, seed=42)
@@ -76,7 +76,7 @@ tensors already on `device`.
 ### `validators.VALIDATORS`
 
 ```python
-from ts_type_refiner.validators import VALIDATORS
+from ts_type_refiner.rules.validators import VALIDATORS
 
 validate = VALIDATORS["string_literal_union→string"]
 ok, reason = validate("'on' | 'off'")        # (True, "ok")
@@ -88,10 +88,10 @@ Keys match the `rule` field emitted by `refiner-locate.ts` and recorded in
 `utility_type→unknown` route to the same combined validator (they're
 syntactically indistinguishable at locator time).
 
-Each validator returns `(bool, reason_str)` — `infer.py` ANDs this with the
+Each validator returns `(bool, reason_str)` — `inference/infer.py` ANDs this with the
 log-prob threshold to decide `accepted`.
 
-### `train.main` / `infer.main`
+### `training.train.main` / `inference.infer.main`
 
 Thin orchestrators. Read the docstrings; you don't import them — invoke via
 the CLI scripts above. Hyper-parameters (epochs, batch size, model size) are

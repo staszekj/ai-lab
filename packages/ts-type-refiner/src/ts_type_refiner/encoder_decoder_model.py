@@ -9,8 +9,8 @@ nn.Module that maps `(src_ids, tgt_in_ids) → logits` and supports
 autoregressive generation.
 
 Companion modules in `ts_type_refiner`:
-    - ts_type_refiner.trainer    : pure `train(model, batches, …)` function
-    - ts_type_refiner.predictor  : `Predictor(model, encode, decode, …)` callable
+    - ts_type_refiner.training.trainer   : pure `train(model, batches, …)` function
+    - ts_type_refiner.inference.predictor: `Predictor(model, encode, decode, …)` callable
     - ts_type_refiner.checkpoint : save / load / build_model helpers
 
 Architecture (Pre-LN variant — used by GPT-2, T5, BART, modern LLMs):

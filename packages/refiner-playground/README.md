@@ -9,7 +9,7 @@ Bundles:
 
 No ML code lives here. The orchestrator shells out to:
 
-- `packages/ts-type-extractor/src/refiner-locate.ts`
+- `packages/ts-type-extractor/src/rules/refiner-locate.ts`
 - `uv run --package ts-type-refiner refiner-infer`
 - `packages/ts-type-extractor/src/refiner-apply.ts`
 

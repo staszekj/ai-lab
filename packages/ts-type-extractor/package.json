@@ -6,8 +6,8 @@
   "scripts": {
     "build": "tsc",
     "extract": "tsx src/extract.ts",
-    "degrade": "tsx src/degrade.ts",
-    "refiner:locate": "tsx src/refiner-locate.ts",
+    "degrade": "tsx src/rules/degrade.ts",
+    "refiner:locate": "tsx src/rules/refiner-locate.ts",
     "refiner:apply": "tsx src/refiner-apply.ts",
     "repos:fetch": "tsx src/fetch-repos.ts --group all",
     "repos:fetch:type-defs": "tsx src/fetch-repos.ts --group type-defs",
