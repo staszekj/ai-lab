@@ -557,6 +557,16 @@ MUTED_RULES = {
     "astro_infer_get_static_props_type→unknown",
     "dom_element_internals_intersection→unknown",
     "astro_get_static_paths→unknown",
+    # Muted 2026-07-18: usage-repo coverage report showed too few samples
+    # and near-zero recoverability (see data/encoder_decoder_pairs.report.md).
+    "react_component_props_with_ref→any",   # n=7
+    "astro_collection_entry→any",           # n=14, 0% recoverability
+    "dom_shadow_root_init→unknown",         # n=25, 0% recoverability
+    # Muted 2026-07-18 (round 2): worst empirical accuracy / too few val
+    # samples / weak recoverability in the previous 2026-05-31 training run.
+    "conditional_type→unknown",             # 56% acc empirically, worst rule
+    "readonly_array→unknown",               # val=5, statistically unreliable
+    "dom_css_style_declaration→unknown",    # val=7, 3% recoverability
 }
 
 # Rule numbering mirrors degrade.ts DEGRADATION_RULES and refiner-locate.ts RULES — keep in sync.

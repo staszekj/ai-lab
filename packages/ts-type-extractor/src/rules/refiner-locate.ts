@@ -52,6 +52,17 @@ const MUTED_RULE_KEYS = new Set<string>([
   "astro_infer_get_static_props_type",
   "dom_element_internals_intersection",
   "astro_get_static_paths",
+  // Muted 2026-07-18: usage-repo coverage report showed too few samples
+  // and near-zero recoverability (see data/encoder_decoder_pairs.report.md).
+  // Keep in sync with MUTED_RULES in degrade.ts / validators.py.
+  "react_component_props_with_ref",   // n=7
+  "astro_collection_entry",           // n=14, 0% recoverability
+  "dom_shadow_root_init",             // n=25, 0% recoverability
+  // Muted 2026-07-18 (round 2): worst empirical accuracy / too few val
+  // samples / weak recoverability in the previous 2026-05-31 training run.
+  "conditional_type",                 // 56% acc empirically, worst rule
+  "readonly_array",                   // val=5, statistically unreliable
+  "dom_css_style_declaration",        // val=7, 3% recoverability
 ]);
 
 // Rule numbering mirrors degrade.ts DEGRADATION_RULES and validators.py (ts-type-refiner) — keep in sync.

@@ -213,9 +213,14 @@ def main() -> None:
     cli = parser.parse_args()
 
     # ── Device ────────────────────────────────────────────────────────
-    # Training runs on CUDA when available, otherwise on CPU.
+    # Training runs on CUDA when available, then Apple Silicon MPS, else CPU.
     # Nothing else in this file depends on the device choice.
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    if torch.cuda.is_available():
+        device = torch.device("cuda")
+    elif torch.backends.mps.is_available():
+        device = torch.device("mps")
+    else:
+        device = torch.device("cpu")
     print(f"Device: {device}")
 
     # ── Tokenizer ─────────────────────────────────────────────────────

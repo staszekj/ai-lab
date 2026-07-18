@@ -103,6 +103,16 @@ const MUTED_RULES = new Set<string>([
   "astro_infer_get_static_props_type→unknown",
   "dom_element_internals_intersection→unknown",
   "astro_get_static_paths→unknown",
+  // Muted 2026-07-18: usage-repo coverage report showed too few samples
+  // and near-zero recoverability (see data/encoder_decoder_pairs.report.md).
+  "react_component_props_with_ref→any",   // n=7
+  "astro_collection_entry→any",           // n=14, 0% recoverability
+  "dom_shadow_root_init→unknown",         // n=25, 0% recoverability
+  // Muted 2026-07-18 (round 2): worst empirical accuracy / too few val
+  // samples / weak recoverability in the previous 2026-05-31 training run.
+  "conditional_type→unknown",             // 56% acc empirically, worst rule
+  "readonly_array→unknown",               // val=5, statistically unreliable
+  "dom_css_style_declaration→unknown",    // val=7, 3% recoverability
 ]);
 
 const SIMPLE_TYPES = new Set([
@@ -705,6 +715,20 @@ function main() {
     negativeRules.set(rule, (negativeRules.get(rule) || 0) + 1);
   }
 
+  // Addressable coverage rate: conversion rate mixes two very different
+  // reasons an annotation was skipped — (a) it's already a trivial type
+  // (`string`, `unknown`, …), which can never be degraded further, and
+  // (b) it's a non-trivial type with no matching rule, which is a real
+  // gap in rule coverage. Trivial skips are always exact SIMPLE_TYPES
+  // matches (no rule ever targets a bare "string"/"number"/… as input),
+  // so we can recover the split straight from `skippedTypes`.
+  const trivialAnnotations = [...skippedTypes.entries()]
+    .filter(([t]) => SIMPLE_TYPES.has(norm(t)))
+    .reduce((sum, [, count]) => sum + count, 0);
+  const addressableAnnotations = annotations.length - trivialAnnotations;
+  const addressableCoverageRate =
+    addressableAnnotations > 0 ? (positiveCount / addressableAnnotations) * 100 : 0;
+
   console.log(`\n${"─".repeat(60)}`);
   console.log(`DEGRADATION SUMMARY`);
   console.log(`${"─".repeat(60)}`);
@@ -712,7 +736,9 @@ function main() {
   console.log(`  Negative pairs:           ${negatives.length}  (ratio=${negativeRatio})`);
   console.log(`  Total training pairs:     ${trainingPairs.length}`);
   console.log(`  Annotations skipped:      ${annotations.length - positiveCount}`);
-  console.log(`  Conversion rate:          ${((positiveCount / annotations.length) * 100).toFixed(1)}%`);
+  console.log(`  Trivial annotations:      ${trivialAnnotations}  (already string/number/boolean/any/…, never degradable)`);
+  console.log(`  Addressable annotations:  ${addressableAnnotations}  (total − trivial)`);
+  console.log(`  Addressable coverage rate: ${addressableCoverageRate.toFixed(1)}%  (positive / addressable — rule-coverage quality, unskewed by trivial types)`);
 
   console.log(`\n  Rules applied (positives + negatives):`);
   const allRules = new Set<string>([...appliedRules.keys(), ...negativeRules.keys()]);
@@ -728,6 +754,12 @@ function main() {
   console.log(`\n  Top 30 skipped types:`);
   const sortedSkipped = [...skippedTypes.entries()].sort((a, b) => b[1] - a[1]);
   for (const [type, count] of sortedSkipped.slice(0, 30)) {
+    console.log(`    ${count.toString().padStart(4)}  ${type}`);
+  }
+
+  console.log(`\n  Top 30 skipped types (non-trivial only — real rule-coverage gaps):`);
+  const sortedSkippedNonTrivial = sortedSkipped.filter(([t]) => !SIMPLE_TYPES.has(norm(t)));
+  for (const [type, count] of sortedSkippedNonTrivial.slice(0, 30)) {
     console.log(`    ${count.toString().padStart(4)}  ${type}`);
   }
 
