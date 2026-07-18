@@ -23,8 +23,8 @@ Repository sourcing is split into two groups:
 2. **usage**: ~20 component-library repositories (React, Astro,
    custom-elements/web-components) that use at least one ecosystem above.
 
-Group definitions live in `src/repo-groups.ts`.
-Repository URL/path manifest lives in `src/repo-manifest.ts`.
+Group definitions live in `src/repos/repo-groups.ts`.
+Repository URL/path manifest lives in `src/repos/repo-manifest.ts`.
 
 ---
 
@@ -63,8 +63,8 @@ Repository fetch commands (no degradation / no training):
 ### `extract.ts`
 
 ```
-npx tsx src/extract.ts <path...> [--context 0] [--output out.jsonl]
-npx tsx src/extract.ts <path...> [--include-dts]
+npx tsx src/ts-data/extract.ts <path...> [--context 0] [--output out.jsonl]
+npx tsx src/ts-data/extract.ts <path...> [--include-dts]
 ```
 
 Default context radius is `0` (single line containing the annotation).
@@ -136,7 +136,7 @@ deterministic first-match-wins routing. Comments mark high-FP rules
 ### `refiner-apply.ts`
 
 ```
-npx tsx src/refiner-apply.ts --input edits.jsonl [--dry-run]
+npx tsx src/ts-data/refiner-apply.ts --input edits.jsonl [--dry-run]
 ```
 
 Reads `edits.jsonl` from `refiner-infer`, sorts edits **descending by start
@@ -151,7 +151,7 @@ re-reads each file as a guard against stale offsets, writes back in place.
 | File | Producer | Consumer |
 |---|---|---|
 | `extracted_<group>.jsonl` (`type-defs` / `usage`) | `extract.ts` | `degrade.ts` |
-| `encoder_decoder_pairs.jsonl` | `degrade.ts` | `ts-type-refiner` `refiner-train`, `rule-coverage-report.ts`, `repo-contribution-report.ts` |
+| `encoder_decoder_pairs.jsonl` | `degrade.ts` | `ts-type-refiner` `refiner-train`, `rule-coverage-report.ts`, `repos/repo-contribution-report.ts` |
 | `candidates.jsonl` | `refiner-locate.ts` | `ts-type-refiner` `refiner-infer` |
 | `edits.jsonl` | `refiner-infer` | `refiner-apply.ts` |
 

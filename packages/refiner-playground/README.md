@@ -7,11 +7,11 @@ Bundles:
 - `samples/` — TypeScript files to refine (start with `SampleComponent.tsx`)
 - `src/run.ts` — one-shot orchestrator: locate → infer → apply
 
-No ML code lives here. The orchestrator shells out to:
-
+ No ML code lives here. The orchestrator shells out to:
+ 
 - `packages/ts-type-extractor/src/rules/refiner-locate.ts`
-- `uv run --package ts-type-refiner refiner-infer`
-- `packages/ts-type-extractor/src/refiner-apply.ts`
+ - `uv run --package ts-type-refiner refiner-infer`
+ - `packages/ts-type-extractor/src/ts-data/refiner-apply.ts`
 
 Intermediate artifacts (`candidates.jsonl`, `edits.jsonl`) land in
 `./tmp/` so you can inspect them after a run.

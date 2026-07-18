@@ -11,8 +11,8 @@
 import * as fs from "fs";
 import * as path from "path";
 import * as crypto from "crypto";
-import { applyContainingBoost } from "../siblings.js";
-import { collectNegatives } from "../negatives.js";
+import { applyContainingBoost } from "../ts-data/siblings.js";
+import { RULES } from "./refiner-locate.js";
 
 interface TypeAnnotation {
   repo?: string;
@@ -118,6 +118,59 @@ function splitUnion(t: string): string[] {
 
 function isStringLiteral(tok: string): boolean {
   return /^'[^']*'$/.test(tok) || /^"[^"]*"$/.test(tok);
+}
+
+/** Build `rule_name -> degraded-shape predicate` map from locator RULES. */
+function buildNegativePredicateMap(): Map<string, (t: string) => boolean> {
+  const m = new Map<string, (t: string) => boolean>();
+  for (const r of RULES) m.set(r.name, r.match);
+  return m;
+}
+
+/**
+ * Select hard-negative annotations per rule.
+ *
+ * For every rule with `positiveCounts[rule] > 0`, scan annotations for rows
+ * that already match the rule's degraded shape and pick
+ * `round(positiveCount * ratio)` in deterministic order.
+ */
+function collectNegatives(
+  annotations: TypeAnnotation[],
+  positiveCounts: Map<string, number>,
+  ratio: number,
+): Array<{ ann: TypeAnnotation; rule: string }> {
+  if (ratio <= 0) return [];
+  const predicates = buildNegativePredicateMap();
+
+  // Deterministic ordering: by (repo, file, line, name).
+  const sorted = [...annotations].sort((a, b) => {
+    const ar = a.repo ?? "";
+    const br = b.repo ?? "";
+    if (ar !== br) return ar < br ? -1 : 1;
+    if (a.file !== b.file) return a.file < b.file ? -1 : 1;
+    if (a.line !== b.line) return a.line - b.line;
+    if (a.name !== b.name) return a.name < b.name ? -1 : 1;
+    return 0;
+  });
+
+  const out: Array<{ ann: TypeAnnotation; rule: string }> = [];
+  for (const [ruleName, positiveCount] of positiveCounts.entries()) {
+    if (positiveCount <= 0) continue;
+    const predicate = predicates.get(ruleName);
+    if (!predicate) continue; // rule has no degraded-shape predicate
+
+    const limit = Math.round(positiveCount * ratio);
+    if (limit <= 0) continue;
+
+    let taken = 0;
+    for (const ann of sorted) {
+      if (!predicate(norm(ann.typeText))) continue;
+      out.push({ ann, rule: ruleName });
+      taken++;
+      if (taken >= limit) break;
+    }
+  }
+  return out;
 }
 
 // Rule numbering mirrors validators.py (ts-type-refiner) and refiner-locate.ts RULES — keep in sync.

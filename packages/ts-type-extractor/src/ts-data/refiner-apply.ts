@@ -19,7 +19,7 @@
  *     is the safer default for experimental / playground runs.
  *
  * Usage:
- *   npx tsx src/refiner-apply.ts --input edits.jsonl [--dry-run] [--out-suffix refined]
+ *   npx tsx src/ts-data/refiner-apply.ts --input edits.jsonl [--dry-run] [--out-suffix refined]
  */
 
 import * as fs from "fs";

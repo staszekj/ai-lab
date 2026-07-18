@@ -15,7 +15,7 @@ import { fileURLToPath } from "url";
 import { Project, SyntaxKind, Node } from "ts-morph";
 import * as path from "path";
 import * as fs from "fs";
-import { buildSiblings, getContainingDeclName, applyContainingBoost } from "../siblings.js";
+import { buildSiblings, getContainingDeclName, applyContainingBoost } from "../ts-data/siblings.js";
 
 interface RefineCandidate {
   id: string;

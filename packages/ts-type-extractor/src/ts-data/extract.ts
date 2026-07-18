@@ -5,8 +5,8 @@
  * with surrounding code context.
  *
  * Usage:
- *   npx tsx src/extract.ts <path...> [--context 0] [--output out.jsonl] [--include-dts]
- *   npx tsx src/extract.ts data/repos/radix-primitives data/repos/tanstack-query
+ *   npx tsx src/ts-data/extract.ts <path...> [--context 0] [--output out.jsonl] [--include-dts]
+ *   npx tsx src/ts-data/extract.ts data/repos/radix-primitives data/repos/tanstack-query
  *
  * Default context radius is 0 (just the line containing the annotation).
  * Rationale: with multi-rule training, multiple candidates on nearby

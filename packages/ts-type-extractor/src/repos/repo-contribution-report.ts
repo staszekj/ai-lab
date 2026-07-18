@@ -48,7 +48,7 @@ function parseArgs(): Args {
 
   if (!extracted || !pairs) {
     throw new Error(
-      "Usage: tsx src/repo-contribution-report.ts --extracted <file> --pairs <file> [--top 30] [--min-extracted 500] [--label x]",
+      "Usage: tsx src/repos/repo-contribution-report.ts --extracted <file> --pairs <file> [--top 30] [--min-extracted 500] [--label x]",
     );
   }
 

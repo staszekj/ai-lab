@@ -90,7 +90,7 @@ function main() {
 
   const extractArgs = [
     "tsx",
-    "src/extract.ts",
+    "src/ts-data/extract.ts",
     ...existing,
     "--context",
     String(context),
