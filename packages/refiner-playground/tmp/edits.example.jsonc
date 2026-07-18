@@ -1,0 +1,73 @@
+{
+  // Two presentation-friendly rows sampled from edits.jsonl.
+  // Each row is the inference output for one candidate.
+  "examples": {
+    "A": {
+      // Links back to the original candidate id
+      "id": "/home/stan/workspace/ai-lab/packages/refiner-playground/samples/SampleComponent.tsx:112",
+
+      // Target file + replacement span (character offsets)
+      "file": "SampleComponent.tsx",
+      "start": 112,
+      "end": 132,
+
+      // Input and chosen refinement
+      "degradedType": "React.SyntheticEvent",
+      "suggestion": "React.FormEvent<HTMLFormElement>",
+
+      // Decision outcome after rule validator + thresholds
+      "accepted": true,
+      "reason": "ok",
+
+      // Confidence-like score (higher is better; values are log-probabilities)
+      "logprob": -0.0061823418363928795,
+
+      // Rule-level safety gate result
+      "ruleValidatorPassed": true,
+      "rule": "react_event→synthetic",
+
+      // Candidate proposals from beam/top-k decoding (kept for diagnostics)
+      "proposals": [
+        {
+          "text": "React.FormEvent<HTMLFormElement>",
+          "logprob": -0.0061823418363928795,
+          "normalized_prob": 1.0,
+          "identsInSiblings": 0,
+          "nonTrivialIdents": 2
+        }
+      ]
+    },
+
+    "B": {
+      // Generic argument refinement: HTMLElement | null -> HTMLInputElement | null
+      "id": "/home/stan/workspace/ai-lab/packages/refiner-playground/samples/SampleComponent.tsx:251",
+
+      // Replacement span in source file
+      "file": "SampleComponent.tsx",
+      "start": 251,
+      "end": 269,
+
+      // Input and selected output
+      "degradedType": "HTMLElement | null",
+      "suggestion": "HTMLInputElement | null",
+
+      // Accepted by validator
+      "accepted": true,
+      "reason": "ok",
+      "logprob": -0.0005382109666243196,
+      "ruleValidatorPassed": true,
+      "rule": "html_specific_element_nullable→html_element_nullable",
+
+      // Full proposal list (single strong winner in this case)
+      "proposals": [
+        {
+          "text": "HTMLInputElement | null",
+          "logprob": -0.0005382109666243196,
+          "normalized_prob": 1.0,
+          "identsInSiblings": 0,
+          "nonTrivialIdents": 1
+        }
+      ]
+    }
+  }
+}

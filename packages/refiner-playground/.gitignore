@@ -1,4 +1,6 @@
-tmp/
+tmp/*
+!tmp/candidates.example.jsonc
+!tmp/edits.example.jsonc
 node_modules/
 samples/*.refined.ts
 samples/*.refined.tsx

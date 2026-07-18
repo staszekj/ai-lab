@@ -34,9 +34,18 @@ from ts_type_refiner.prompt import PROMPT_VERSION
 from ts_type_refiner.rules.validators import VALIDATORS
 
 
-DATA_PATH            = "packages/ts-type-extractor/data/encoder_decoder_pairs.jsonl"
-TOKENIZER_PATH       = "packages/ts-type-refiner/tokenizer.json"
-CHECKPOINT_DIR       = Path("packages/ts-type-refiner/checkpoints")
+def _find_repo_root() -> Path:
+    here = Path(__file__).resolve()
+    for parent in here.parents:
+        if (parent / "pyproject.toml").exists() and (parent / "packages").exists():
+            return parent
+    raise RuntimeError("Could not locate ai-lab repository root from train.py")
+
+
+REPO_ROOT            = _find_repo_root()
+DATA_PATH            = REPO_ROOT / "packages/ts-type-extractor/data/encoder_decoder_pairs.jsonl"
+TOKENIZER_PATH       = REPO_ROOT / "packages/ts-type-refiner/tokenizer.json"
+CHECKPOINT_DIR       = REPO_ROOT / "packages/ts-type-refiner/checkpoints"
 CHECKPOINT_PATH      = CHECKPOINT_DIR / "refiner.pt"
 BEST_CHECKPOINT_PATH = CHECKPOINT_DIR / "refiner_best.pt"
 

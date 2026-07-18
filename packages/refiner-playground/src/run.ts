@@ -37,8 +37,8 @@
  * don't pollute /tmp and are easy to inspect after a run.
  *
  * Usage:
- *   pnpm --filter refiner-playground run    (writes *.refined.tsx siblings)
- *   pnpm --filter refiner-playground run:dry
+ *   pnpm --filter refiner-playground refine     (writes *.refined.tsx siblings)
+ *   pnpm --filter refiner-playground refine:dry
  *   tsx src/run.ts [--target samples/Foo.tsx] [--dry-run] [--min-logprob -0.5]
  *                  [--out-suffix refined | --in-place]
  */
@@ -111,7 +111,13 @@ function parseArgs(): Args {
       .map((f) => path.join(samplesDir, f)));
   }
 
-  return { targets, dryRun, minLogprob, rule, outSuffix };
+  return {
+    targets: targets.map((t) => path.resolve(t)),
+    dryRun,
+    minLogprob,
+    rule,
+    outSuffix,
+  };
 }
 
 // ══════════════════════════════════════════════════════════════════════
@@ -153,6 +159,8 @@ function main(): void {
   const args = parseArgs();
   ensureCheckpoint();
   fs.mkdirSync(TMP_DIR, { recursive: true });
+  if (fs.existsSync(CANDIDATES)) fs.rmSync(CANDIDATES);
+  if (fs.existsSync(EDITS)) fs.rmSync(EDITS);
 
   banner(`REFINER PLAYGROUND  ${args.dryRun ? "(dry-run)" : ""}`);
   console.log(`  Targets:    ${args.targets.length}`);
@@ -256,7 +264,7 @@ function main(): void {
   //   after:  const observedElements: Map<Measurable, ObservedData> = new Map();
   banner("[3/3] refiner-apply");
   const applyArgs = [
-    "tsx", path.join(TS_EXTRACTOR_DIR, "src", "refiner-apply.ts"),
+    "tsx", path.join(TS_EXTRACTOR_DIR, "src", "ts-data", "refiner-apply.ts"),
     "--input", EDITS,
   ];
   if (args.dryRun) applyArgs.push("--dry-run");  if (args.outSuffix) applyArgs.push("--out-suffix", args.outSuffix);  // Run from each target's directory so the relative `file` field resolves.

@@ -1,0 +1,59 @@
+{
+  // Two presentation-friendly rows sampled from candidates.jsonl.
+  // These are pretty-printed and annotated for easy walkthrough.
+  "examples": {
+    "A": {
+      // Unique candidate id: <absolute-file-path>:<start-offset>
+      "id": "/home/stan/workspace/ai-lab/packages/refiner-playground/samples/SampleComponent.tsx:112",
+
+      // Source location
+      "file": "SampleComponent.tsx",
+      "line": 5,
+      "start": 112,
+      "end": 132,
+
+      // What AST node was captured by the locator
+      "kind": "parameter",
+      "name": "e",
+
+      // Exact snippet containing the degraded annotation
+      "context": "  onSubmit: (e: React.SyntheticEvent) => void;",
+
+      // Type text that should be refined by the model
+      "degradedType": "React.SyntheticEvent",
+
+      // Rule that identified this candidate
+      "rule": "react_event→synthetic",
+
+      // Optional nearby type hints collected by extractor
+      "siblings": "[-> void]"
+    },
+
+    "B": {
+      // Example of a generic argument candidate (useRef<...>)
+      "id": "/home/stan/workspace/ai-lab/packages/refiner-playground/samples/SampleComponent.tsx:251",
+
+      // Source location
+      "file": "SampleComponent.tsx",
+      "line": 10,
+      "start": 251,
+      "end": 269,
+
+      // Node metadata
+      "kind": "generic_argument",
+      "name": "useRef",
+
+      // Locator-provided source context
+      "context": "  const inputRef = useRef<HTMLElement | null>(null);",
+
+      // Degraded type to be passed into inference stage
+      "degradedType": "HTMLElement | null",
+
+      // Rule family for HTML element specificity
+      "rule": "html_specific_element_nullable→html_element_nullable",
+
+      // Empty here because no sibling hints were attached
+      "siblings": ""
+    }
+  }
+}

@@ -5,11 +5,8 @@
   "type": "module",
   "private": true,
   "scripts": {
-    "run": "tsx src/run.ts",
-    "run:dry": "tsx src/run.ts --dry-run"
-  },
-  "pnpm": {
-    "onlyBuiltDependencies": ["esbuild"]
+    "refine": "tsx src/run.ts",
+    "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

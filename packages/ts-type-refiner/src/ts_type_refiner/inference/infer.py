@@ -113,6 +113,17 @@ _TRIVIAL_IDENTS = frozenset({
 _IDENT_RE = re.compile(r"[A-Za-z_$][A-Za-z0-9_$]*")
 
 
+def _find_repo_root() -> Path:
+    here = Path(__file__).resolve()
+    for parent in here.parents:
+        if (parent / "pyproject.toml").exists() and (parent / "packages").exists():
+            return parent
+    raise RuntimeError("Could not locate ai-lab repository root from infer.py")
+
+
+REPO_ROOT = _find_repo_root()
+
+
 def _non_trivial_idents(s: str) -> set[str]:
     return {m.group(0) for m in _IDENT_RE.finditer(s or "")} - _TRIVIAL_IDENTS
 
@@ -134,8 +145,8 @@ def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="ts-type-refiner Phase 2 inference")
     p.add_argument("--input",      required=True, help="candidates.jsonl from refiner-locate")
     p.add_argument("--output",     required=True, help="edits.jsonl for refiner-apply")
-    p.add_argument("--checkpoint", default="packages/ts-type-refiner/checkpoints/refiner.pt")
-    p.add_argument("--tokenizer",  default="packages/ts-type-refiner/tokenizer.json")
+    p.add_argument("--checkpoint", default=str(REPO_ROOT / "packages/ts-type-refiner/checkpoints/refiner.pt"))
+    p.add_argument("--tokenizer",  default=str(REPO_ROOT / "packages/ts-type-refiner/tokenizer.json"))
     p.add_argument("--min-logprob", type=float, default=float("-inf"),
                    help="reject suggestions with mean token log-prob below this")
     p.add_argument("--num-candidates", type=int, default=5,

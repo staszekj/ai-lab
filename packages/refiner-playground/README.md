@@ -22,10 +22,10 @@ Intermediate artifacts (`candidates.jsonl`, `edits.jsonl`) land in
 
 ```bash
 # All samples, apply in place
-pnpm --filter refiner-playground run
+pnpm --filter refiner-playground refine
 
 # Dry-run (diff preview, no writes)
-pnpm --filter refiner-playground run:dry
+pnpm --filter refiner-playground refine:dry
 
 # One file, only a specific rule
 npx tsx src/run.ts samples/SampleComponent.tsx --rule string_literal_union --dry-run
@@ -49,7 +49,7 @@ Flags:
 
 1. Train (or reuse) a model so `packages/ts-type-refiner/checkpoints/refiner.pt` exists.
 2. Add a `.tsx` to `samples/`.
-3. `pnpm --filter refiner-playground run:dry` — preview suggestions.
+3. `pnpm --filter refiner-playground refine:dry` — preview suggestions.
 4. Tweak `--min-logprob` / `--rule` until the diff looks sane.
 5. Drop `--dry-run` to actually write.
 6. `git diff -- packages/refiner-playground/samples/` to inspect.

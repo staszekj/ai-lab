@@ -1,0 +1,787 @@
+/home/stan/workspace/ai-lab/.venv/lib/python3.12/site-packages/torch/_subclasses/functional_tensor.py:295: UserWarning: Failed to initialize NumPy: No module named 'numpy' (Triggered internally at ../torch/csrc/utils/tensor_numpy.cpp:84.)
+  cpu = _conversion_method_template(device=torch.device("cpu"))
+
+
+
+Device: cuda
+Building BPE tokenizer from /home/stan/workspace/ai-lab/packages/ts-type-extractor/data/encoder_decoder_pairs.jsonl...
+  TSTokenizer(vocab_size=2048)  saved to /home/stan/workspace/ai-lab/packages/ts-type-refiner/tokenizer.json
+  Pairs: 28281  train=23912  val=4369
+  Src tokens: min=29 max=256 avg=61
+  Tgt tokens: min=1 max=64 avg=6
+
+Model: EncoderDecoderModel
+  vocab=2048 d_model=256 heads=8 layers=4 max_seq=260
+  Parameters: 8,488,960
+
+============================================================
+TRAINING — 50 epochs, batch_size=96, lr=0.0003  balance_rules=False
+============================================================
+    epoch   1  batch    25  loss=5.5437  tf_acc=21%  (2.6 batch/s)
+    epoch   1  batch    50  loss=4.8296  tf_acc=29%  (2.6 batch/s)
+    epoch   1  batch    75  loss=4.4126  tf_acc=34%  (2.5 batch/s)
+    epoch   1  batch   100  loss=4.1179  tf_acc=37%  (2.5 batch/s)
+    epoch   1  batch   125  loss=3.8921  tf_acc=40%  (2.6 batch/s)
+    epoch   1  batch   150  loss=3.7175  tf_acc=42%  (2.6 batch/s)
+    epoch   1  batch   175  loss=3.5814  tf_acc=43%  (2.6 batch/s)
+    epoch   1  batch   200  loss=3.4619  tf_acc=45%  (2.6 batch/s)
+    epoch   1  batch   225  loss=3.3486  tf_acc=46%  (2.6 batch/s)
+    epoch   1  batch   250  loss=3.2555  tf_acc=47%  (2.6 batch/s)
+  Epoch   1/50  loss=3.2555  tf_acc=47%  96.1s
+    epoch   2  batch    25  loss=2.2773  tf_acc=58%  (2.3 batch/s)
+    epoch   2  batch    50  loss=2.2605  tf_acc=58%  (2.4 batch/s)
+    epoch   2  batch    75  loss=2.2474  tf_acc=58%  (2.5 batch/s)
+    epoch   2  batch   100  loss=2.2200  tf_acc=59%  (2.5 batch/s)
+    epoch   2  batch   125  loss=2.1915  tf_acc=59%  (2.5 batch/s)
+    epoch   2  batch   150  loss=2.1658  tf_acc=59%  (2.5 batch/s)
+    epoch   2  batch   175  loss=2.1467  tf_acc=60%  (2.5 batch/s)
+    epoch   2  batch   200  loss=2.1312  tf_acc=60%  (2.5 batch/s)
+    epoch   2  batch   225  loss=2.1147  tf_acc=60%  (2.5 batch/s)
+    epoch   2  batch   250  loss=2.0867  tf_acc=60%  (2.6 batch/s)
+  Epoch   2/50  loss=2.0867  tf_acc=60%  97.2s
+    epoch   3  batch    25  loss=1.7489  tf_acc=65%  (2.6 batch/s)
+    epoch   3  batch    50  loss=1.7702  tf_acc=64%  (2.6 batch/s)
+    epoch   3  batch    75  loss=1.7543  tf_acc=64%  (2.6 batch/s)
+    epoch   3  batch   100  loss=1.7357  tf_acc=65%  (2.6 batch/s)
+    epoch   3  batch   125  loss=1.7286  tf_acc=65%  (2.6 batch/s)
+    epoch   3  batch   150  loss=1.7091  tf_acc=65%  (2.6 batch/s)
+    epoch   3  batch   175  loss=1.6955  tf_acc=66%  (2.6 batch/s)
+    epoch   3  batch   200  loss=1.6829  tf_acc=66%  (2.6 batch/s)
+    epoch   3  batch   225  loss=1.6721  tf_acc=66%  (2.6 batch/s)
+    epoch   3  batch   250  loss=1.6637  tf_acc=66%  (2.6 batch/s)
+  Epoch   3/50  loss=1.6637  tf_acc=66%  96.5s
+    epoch   4  batch    25  loss=1.4235  tf_acc=69%  (2.8 batch/s)
+    epoch   4  batch    50  loss=1.4236  tf_acc=70%  (2.6 batch/s)
+    epoch   4  batch    75  loss=1.3972  tf_acc=70%  (2.6 batch/s)
+    epoch   4  batch   100  loss=1.3950  tf_acc=70%  (2.6 batch/s)
+    epoch   4  batch   125  loss=1.3720  tf_acc=71%  (2.6 batch/s)
+    epoch   4  batch   150  loss=1.3737  tf_acc=71%  (2.6 batch/s)
+    epoch   4  batch   175  loss=1.3641  tf_acc=71%  (2.6 batch/s)
+    epoch   4  batch   200  loss=1.3535  tf_acc=71%  (2.6 batch/s)
+    epoch   4  batch   225  loss=1.3496  tf_acc=71%  (2.6 batch/s)
+    epoch   4  batch   250  loss=1.3442  tf_acc=71%  (2.6 batch/s)
+  Epoch   4/50  loss=1.3442  tf_acc=71%  97.2s
+    epoch   5  batch    25  loss=1.1024  tf_acc=76%  (2.5 batch/s)
+    epoch   5  batch    50  loss=1.0798  tf_acc=76%  (2.6 batch/s)
+    epoch   5  batch    75  loss=1.0857  tf_acc=76%  (2.6 batch/s)
+    epoch   5  batch   100  loss=1.0876  tf_acc=76%  (2.5 batch/s)
+    epoch   5  batch   125  loss=1.0827  tf_acc=76%  (2.6 batch/s)
+    epoch   5  batch   150  loss=1.0706  tf_acc=76%  (2.6 batch/s)
+    epoch   5  batch   175  loss=1.0714  tf_acc=76%  (2.6 batch/s)
+    epoch   5  batch   200  loss=1.0716  tf_acc=76%  (2.6 batch/s)
+    epoch   5  batch   225  loss=1.0621  tf_acc=76%  (2.6 batch/s)
+    epoch   5  batch   250  loss=1.0595  tf_acc=77%  (2.6 batch/s)
+  Epoch   5/50  loss=1.0595  tf_acc=77%  96.6s
+    epoch   6  batch    25  loss=0.8307  tf_acc=81%  (2.6 batch/s)
+    epoch   6  batch    50  loss=0.8320  tf_acc=81%  (2.6 batch/s)
+    epoch   6  batch    75  loss=0.8168  tf_acc=81%  (2.6 batch/s)
+    epoch   6  batch   100  loss=0.8230  tf_acc=81%  (2.6 batch/s)
+    epoch   6  batch   125  loss=0.8281  tf_acc=81%  (2.6 batch/s)
+    epoch   6  batch   150  loss=0.8233  tf_acc=81%  (2.6 batch/s)
+    epoch   6  batch   175  loss=0.8184  tf_acc=81%  (2.6 batch/s)
+    epoch   6  batch   200  loss=0.8187  tf_acc=81%  (2.6 batch/s)
+    epoch   6  batch   225  loss=0.8202  tf_acc=81%  (2.6 batch/s)
+    epoch   6  batch   250  loss=0.8137  tf_acc=81%  (2.6 batch/s)
+  Epoch   6/50  loss=0.8137  tf_acc=81%  96.7s
+    epoch   7  batch    25  loss=0.5609  tf_acc=87%  (2.5 batch/s)
+    epoch   7  batch    50  loss=0.5806  tf_acc=87%  (2.4 batch/s)
+    epoch   7  batch    75  loss=0.5879  tf_acc=86%  (2.4 batch/s)
+    epoch   7  batch   100  loss=0.5878  tf_acc=86%  (2.4 batch/s)
+    epoch   7  batch   125  loss=0.5963  tf_acc=86%  (2.5 batch/s)
+    epoch   7  batch   150  loss=0.5964  tf_acc=86%  (2.5 batch/s)
+    epoch   7  batch   175  loss=0.5996  tf_acc=86%  (2.5 batch/s)
+    epoch   7  batch   200  loss=0.6007  tf_acc=86%  (2.5 batch/s)
+    epoch   7  batch   225  loss=0.6013  tf_acc=86%  (2.6 batch/s)
+    epoch   7  batch   250  loss=0.6020  tf_acc=86%  (2.6 batch/s)
+  Epoch   7/50  loss=0.6020  tf_acc=86%  97.1s
+    epoch   8  batch    25  loss=0.4436  tf_acc=90%  (2.3 batch/s)
+    epoch   8  batch    50  loss=0.4129  tf_acc=91%  (2.5 batch/s)
+    epoch   8  batch    75  loss=0.4092  tf_acc=91%  (2.5 batch/s)
+    epoch   8  batch   100  loss=0.4113  tf_acc=91%  (2.5 batch/s)
+    epoch   8  batch   125  loss=0.4203  tf_acc=90%  (2.5 batch/s)
+    epoch   8  batch   150  loss=0.4211  tf_acc=90%  (2.5 batch/s)
+    epoch   8  batch   175  loss=0.4209  tf_acc=90%  (2.6 batch/s)
+    epoch   8  batch   200  loss=0.4222  tf_acc=90%  (2.6 batch/s)
+    epoch   8  batch   225  loss=0.4250  tf_acc=90%  (2.6 batch/s)
+    epoch   8  batch   250  loss=0.4262  tf_acc=90%  (2.6 batch/s)
+  Epoch   8/50  loss=0.4262  tf_acc=90%  97.5s
+    epoch   9  batch    25  loss=0.2683  tf_acc=94%  (2.7 batch/s)
+    epoch   9  batch    50  loss=0.2693  tf_acc=94%  (2.6 batch/s)
+    epoch   9  batch    75  loss=0.2690  tf_acc=94%  (2.5 batch/s)
+    epoch   9  batch   100  loss=0.2733  tf_acc=94%  (2.5 batch/s)
+    epoch   9  batch   125  loss=0.2761  tf_acc=94%  (2.5 batch/s)
+    epoch   9  batch   150  loss=0.2787  tf_acc=94%  (2.5 batch/s)
+    epoch   9  batch   175  loss=0.2820  tf_acc=94%  (2.6 batch/s)
+    epoch   9  batch   200  loss=0.2857  tf_acc=93%  (2.5 batch/s)
+    epoch   9  batch   225  loss=0.2873  tf_acc=93%  (2.6 batch/s)
+    epoch   9  batch   250  loss=0.2877  tf_acc=93%  (2.6 batch/s)
+  Epoch   9/50  loss=0.2877  tf_acc=93%  97.3s
+    epoch  10  batch    25  loss=0.1832  tf_acc=96%  (2.6 batch/s)
+    epoch  10  batch    50  loss=0.1762  tf_acc=96%  (2.7 batch/s)
+    epoch  10  batch    75  loss=0.1769  tf_acc=96%  (2.7 batch/s)
+    epoch  10  batch   100  loss=0.1791  tf_acc=96%  (2.6 batch/s)
+    epoch  10  batch   125  loss=0.1809  tf_acc=96%  (2.6 batch/s)
+    epoch  10  batch   150  loss=0.1817  tf_acc=96%  (2.5 batch/s)
+    epoch  10  batch   175  loss=0.1843  tf_acc=96%  (2.6 batch/s)
+    epoch  10  batch   200  loss=0.1853  tf_acc=96%  (2.6 batch/s)
+    epoch  10  batch   225  loss=0.1873  tf_acc=96%  (2.6 batch/s)
+    epoch  10  batch   250  loss=0.1884  tf_acc=96%  (2.6 batch/s)
+  ✓ expected: HTMLInputElement
+    got:        HTMLInputElement
+  ✓ expected: HTMLInputElement
+    got:        HTMLInputElement
+  ✓ expected: HTMLDivElement | null
+    got:        HTMLDivElement | null
+  ✗ expected: RovingFocusGroupProps['dir']
+    got:        CSSStyleDeclaration['direction']
+  ✓ expected: AccordionImplProps['dir']
+    got:        AccordionImplProps['dir']
+    → val exact-match (micro): 45.6% (228/500)
+    → val macro acceptable (per-rule): 92.1%
+    per-rule:  rule                                                 em     vp    acc  (n,neg)
+      html_specific_element→html_element                 70%   94%   94%  ( 125,  0)
+      string_literal_union→string                        38%   90%   90%  ( 114,  0)
+      utility_type→unknown                               18%   69%   69%  (  61,  0)
+      indexed_access_type→unknown                        41%   87%   87%  (  54,  0)
+      record_string_value→unknown                        29%   84%   84%  (  38,  0)
+      set→unknown                                        81%  100%  100%  (  27,  0)
+      react_event→synthetic                              46%   96%   96%  (  26,  0)
+      html_specific_element_nullable→html_element_nullable   53%  100%  100%  (  15,  0)
+      map→unknown                                        21%  100%  100%  (  14,  0)
+      promise→unknown                                     0%  100%  100%  (   6,  0)
+      react_refobject→unknown                            40%  100%  100%  (   5,  0)
+      react_mutable_refobject→unknown                    80%  100%  100%  (   5,  0)
+  Epoch  10/50  loss=0.1884  tf_acc=96%  109.3s
+    ✓ new best 92.1% @ epoch 10 → refiner_best.pt
+    epoch  11  batch    25  loss=0.1190  tf_acc=98%  (2.5 batch/s)
+    epoch  11  batch    50  loss=0.1199  tf_acc=98%  (2.6 batch/s)
+    epoch  11  batch    75  loss=0.1206  tf_acc=98%  (2.5 batch/s)
+    epoch  11  batch   100  loss=0.1224  tf_acc=98%  (2.5 batch/s)
+    epoch  11  batch   125  loss=0.1240  tf_acc=97%  (2.5 batch/s)
+    epoch  11  batch   150  loss=0.1248  tf_acc=97%  (2.5 batch/s)
+    epoch  11  batch   175  loss=0.1260  tf_acc=97%  (2.5 batch/s)
+    epoch  11  batch   200  loss=0.1265  tf_acc=97%  (2.5 batch/s)
+    epoch  11  batch   225  loss=0.1276  tf_acc=97%  (2.5 batch/s)
+    epoch  11  batch   250  loss=0.1285  tf_acc=97%  (2.6 batch/s)
+  Epoch  11/50  loss=0.1285  tf_acc=97%  97.8s
+    epoch  12  batch    25  loss=0.0941  tf_acc=98%  (2.4 batch/s)
+    epoch  12  batch    50  loss=0.0878  tf_acc=98%  (2.5 batch/s)
+    epoch  12  batch    75  loss=0.0861  tf_acc=98%  (2.6 batch/s)
+    epoch  12  batch   100  loss=0.0869  tf_acc=98%  (2.5 batch/s)
+    epoch  12  batch   125  loss=0.0884  tf_acc=98%  (2.5 batch/s)
+    epoch  12  batch   150  loss=0.0893  tf_acc=98%  (2.6 batch/s)
+    epoch  12  batch   175  loss=0.0911  tf_acc=98%  (2.6 batch/s)
+    epoch  12  batch   200  loss=0.0926  tf_acc=98%  (2.6 batch/s)
+    epoch  12  batch   225  loss=0.0935  tf_acc=98%  (2.6 batch/s)
+    epoch  12  batch   250  loss=0.0945  tf_acc=98%  (2.6 batch/s)
+  Epoch  12/50  loss=0.0945  tf_acc=98%  97.2s
+    epoch  13  batch    25  loss=0.0711  tf_acc=98%  (2.5 batch/s)
+    epoch  13  batch    50  loss=0.0743  tf_acc=98%  (2.4 batch/s)
+    epoch  13  batch    75  loss=0.0729  tf_acc=98%  (2.5 batch/s)
+    epoch  13  batch   100  loss=0.0739  tf_acc=98%  (2.6 batch/s)
+    epoch  13  batch   125  loss=0.0742  tf_acc=98%  (2.5 batch/s)
+    epoch  13  batch   150  loss=0.0740  tf_acc=98%  (2.6 batch/s)
+    epoch  13  batch   175  loss=0.0742  tf_acc=98%  (2.6 batch/s)
+    epoch  13  batch   200  loss=0.0740  tf_acc=98%  (2.6 batch/s)
+    epoch  13  batch   225  loss=0.0743  tf_acc=98%  (2.6 batch/s)
+    epoch  13  batch   250  loss=0.0750  tf_acc=98%  (2.6 batch/s)
+  Epoch  13/50  loss=0.0750  tf_acc=98%  98.0s
+    epoch  14  batch    25  loss=0.0568  tf_acc=99%  (2.7 batch/s)
+    epoch  14  batch    50  loss=0.0551  tf_acc=99%  (2.6 batch/s)
+    epoch  14  batch    75  loss=0.0537  tf_acc=99%  (2.6 batch/s)
+    epoch  14  batch   100  loss=0.0519  tf_acc=99%  (2.6 batch/s)
+    epoch  14  batch   125  loss=0.0547  tf_acc=99%  (2.6 batch/s)
+    epoch  14  batch   150  loss=0.0558  tf_acc=99%  (2.6 batch/s)
+    epoch  14  batch   175  loss=0.0569  tf_acc=99%  (2.6 batch/s)
+    epoch  14  batch   200  loss=0.0575  tf_acc=99%  (2.6 batch/s)
+    epoch  14  batch   225  loss=0.0578  tf_acc=99%  (2.6 batch/s)
+    epoch  14  batch   250  loss=0.0583  tf_acc=99%  (2.6 batch/s)
+  Epoch  14/50  loss=0.0583  tf_acc=99%  95.8s
+    epoch  15  batch    25  loss=0.0443  tf_acc=99%  (2.4 batch/s)
+    epoch  15  batch    50  loss=0.0459  tf_acc=99%  (2.5 batch/s)
+    epoch  15  batch    75  loss=0.0473  tf_acc=99%  (2.5 batch/s)
+    epoch  15  batch   100  loss=0.0467  tf_acc=99%  (2.5 batch/s)
+    epoch  15  batch   125  loss=0.0475  tf_acc=99%  (2.6 batch/s)
+    epoch  15  batch   150  loss=0.0477  tf_acc=99%  (2.6 batch/s)
+    epoch  15  batch   175  loss=0.0486  tf_acc=99%  (2.6 batch/s)
+    epoch  15  batch   200  loss=0.0494  tf_acc=99%  (2.6 batch/s)
+    epoch  15  batch   225  loss=0.0496  tf_acc=99%  (2.6 batch/s)
+    epoch  15  batch   250  loss=0.0502  tf_acc=99%  (2.6 batch/s)
+  Epoch  15/50  loss=0.0502  tf_acc=99%  97.3s
+    epoch  16  batch    25  loss=0.0428  tf_acc=99%  (2.3 batch/s)
+    epoch  16  batch    50  loss=0.0408  tf_acc=99%  (2.4 batch/s)
+    epoch  16  batch    75  loss=0.0416  tf_acc=99%  (2.5 batch/s)
+    epoch  16  batch   100  loss=0.0428  tf_acc=99%  (2.5 batch/s)
+    epoch  16  batch   125  loss=0.0437  tf_acc=99%  (2.6 batch/s)
+    epoch  16  batch   150  loss=0.0440  tf_acc=99%  (2.6 batch/s)
+    epoch  16  batch   175  loss=0.0441  tf_acc=99%  (2.6 batch/s)
+    epoch  16  batch   200  loss=0.0457  tf_acc=99%  (2.6 batch/s)
+    epoch  16  batch   225  loss=0.0460  tf_acc=99%  (2.6 batch/s)
+    epoch  16  batch   250  loss=0.0463  tf_acc=99%  (2.6 batch/s)
+  Epoch  16/50  loss=0.0463  tf_acc=99%  96.7s
+    epoch  17  batch    25  loss=0.0411  tf_acc=99%  (2.6 batch/s)
+    epoch  17  batch    50  loss=0.0388  tf_acc=99%  (2.6 batch/s)
+    epoch  17  batch    75  loss=0.0405  tf_acc=99%  (2.6 batch/s)
+    epoch  17  batch   100  loss=0.0420  tf_acc=99%  (2.6 batch/s)
+    epoch  17  batch   125  loss=0.0419  tf_acc=99%  (2.6 batch/s)
+    epoch  17  batch   150  loss=0.0421  tf_acc=99%  (2.6 batch/s)
+    epoch  17  batch   175  loss=0.0420  tf_acc=99%  (2.6 batch/s)
+    epoch  17  batch   200  loss=0.0423  tf_acc=99%  (2.6 batch/s)
+    epoch  17  batch   225  loss=0.0425  tf_acc=99%  (2.6 batch/s)
+    epoch  17  batch   250  loss=0.0430  tf_acc=99%  (2.6 batch/s)
+  Epoch  17/50  loss=0.0430  tf_acc=99%  96.6s
+    epoch  18  batch    25  loss=0.0353  tf_acc=99%  (2.7 batch/s)
+    epoch  18  batch    50  loss=0.0356  tf_acc=99%  (2.7 batch/s)
+    epoch  18  batch    75  loss=0.0371  tf_acc=99%  (2.6 batch/s)
+    epoch  18  batch   100  loss=0.0379  tf_acc=99%  (2.6 batch/s)
+    epoch  18  batch   125  loss=0.0387  tf_acc=99%  (2.6 batch/s)
+    epoch  18  batch   150  loss=0.0385  tf_acc=99%  (2.6 batch/s)
+    epoch  18  batch   175  loss=0.0385  tf_acc=99%  (2.6 batch/s)
+    epoch  18  batch   200  loss=0.0388  tf_acc=99%  (2.6 batch/s)
+    epoch  18  batch   225  loss=0.0395  tf_acc=99%  (2.6 batch/s)
+    epoch  18  batch   250  loss=0.0402  tf_acc=99%  (2.6 batch/s)
+  Epoch  18/50  loss=0.0402  tf_acc=99%  96.1s
+    epoch  19  batch    25  loss=0.0356  tf_acc=99%  (2.6 batch/s)
+    epoch  19  batch    50  loss=0.0380  tf_acc=99%  (2.7 batch/s)
+    epoch  19  batch    75  loss=0.0372  tf_acc=99%  (2.6 batch/s)
+    epoch  19  batch   100  loss=0.0369  tf_acc=99%  (2.5 batch/s)
+    epoch  19  batch   125  loss=0.0368  tf_acc=99%  (2.6 batch/s)
+    epoch  19  batch   150  loss=0.0367  tf_acc=99%  (2.6 batch/s)
+    epoch  19  batch   175  loss=0.0369  tf_acc=99%  (2.6 batch/s)
+    epoch  19  batch   200  loss=0.0372  tf_acc=99%  (2.6 batch/s)
+    epoch  19  batch   225  loss=0.0378  tf_acc=99%  (2.6 batch/s)
+    epoch  19  batch   250  loss=0.0381  tf_acc=99%  (2.6 batch/s)
+  Epoch  19/50  loss=0.0381  tf_acc=99%  97.4s
+    epoch  20  batch    25  loss=0.0332  tf_acc=99%  (2.5 batch/s)
+    epoch  20  batch    50  loss=0.0347  tf_acc=99%  (2.5 batch/s)
+    epoch  20  batch    75  loss=0.0335  tf_acc=99%  (2.5 batch/s)
+    epoch  20  batch   100  loss=0.0337  tf_acc=99%  (2.6 batch/s)
+    epoch  20  batch   125  loss=0.0339  tf_acc=99%  (2.6 batch/s)
+    epoch  20  batch   150  loss=0.0348  tf_acc=99%  (2.6 batch/s)
+    epoch  20  batch   175  loss=0.0349  tf_acc=99%  (2.6 batch/s)
+    epoch  20  batch   200  loss=0.0354  tf_acc=99%  (2.6 batch/s)
+    epoch  20  batch   225  loss=0.0364  tf_acc=99%  (2.6 batch/s)
+    epoch  20  batch   250  loss=0.0370  tf_acc=99%  (2.6 batch/s)
+  ✓ expected: HTMLInputElement
+    got:        HTMLInputElement
+  ✓ expected: HTMLInputElement
+    got:        HTMLInputElement
+  ✓ expected: HTMLDivElement | null
+    got:        HTMLDivElement | null
+  ✗ expected: RovingFocusGroupProps['dir']
+    got:        CSSStyleDeclaration['direction']
+  ✓ expected: AccordionImplProps['dir']
+    got:        AccordionImplProps['dir']
+    → val exact-match (micro): 47.8% (239/500)
+    → val macro acceptable (per-rule): 97.1%
+    per-rule:  rule                                                 em     vp    acc  (n,neg)
+      html_specific_element→html_element                 68%   93%   93%  ( 125,  0)
+      string_literal_union→string                        39%   99%   99%  ( 114,  0)
+      utility_type→unknown                               23%   72%   72%  (  61,  0)
+      indexed_access_type→unknown                        43%   94%   94%  (  54,  0)
+      record_string_value→unknown                        45%   97%   97%  (  38,  0)
+      set→unknown                                        89%  100%  100%  (  27,  0)
+      react_event→synthetic                              46%  100%  100%  (  26,  0)
+      html_specific_element_nullable→html_element_nullable   60%  100%  100%  (  15,  0)
+      map→unknown                                        21%  100%  100%  (  14,  0)
+      promise→unknown                                     0%  100%  100%  (   6,  0)
+      react_refobject→unknown                            40%  100%  100%  (   5,  0)
+      react_mutable_refobject→unknown                    80%  100%  100%  (   5,  0)
+  Epoch  20/50  loss=0.0370  tf_acc=99%  106.3s
+    ✓ new best 97.1% @ epoch 20 → refiner_best.pt
+    epoch  21  batch    25  loss=0.0325  tf_acc=99%  (2.6 batch/s)
+    epoch  21  batch    50  loss=0.0338  tf_acc=99%  (2.7 batch/s)
+    epoch  21  batch    75  loss=0.0334  tf_acc=99%  (2.7 batch/s)
+    epoch  21  batch   100  loss=0.0337  tf_acc=99%  (2.7 batch/s)
+    epoch  21  batch   125  loss=0.0339  tf_acc=99%  (2.7 batch/s)
+    epoch  21  batch   150  loss=0.0340  tf_acc=99%  (2.7 batch/s)
+    epoch  21  batch   175  loss=0.0345  tf_acc=99%  (2.7 batch/s)
+    epoch  21  batch   200  loss=0.0356  tf_acc=99%  (2.6 batch/s)
+    epoch  21  batch   225  loss=0.0360  tf_acc=99%  (2.6 batch/s)
+    epoch  21  batch   250  loss=0.0366  tf_acc=99%  (2.6 batch/s)
+  Epoch  21/50  loss=0.0366  tf_acc=99%  95.9s
+    epoch  22  batch    25  loss=0.0288  tf_acc=99%  (2.7 batch/s)
+    epoch  22  batch    50  loss=0.0298  tf_acc=99%  (2.6 batch/s)
+    epoch  22  batch    75  loss=0.0324  tf_acc=99%  (2.6 batch/s)
+    epoch  22  batch   100  loss=0.0330  tf_acc=99%  (2.5 batch/s)
+    epoch  22  batch   125  loss=0.0332  tf_acc=99%  (2.5 batch/s)
+    epoch  22  batch   150  loss=0.0338  tf_acc=99%  (2.5 batch/s)
+    epoch  22  batch   175  loss=0.0350  tf_acc=99%  (2.6 batch/s)
+    epoch  22  batch   200  loss=0.0357  tf_acc=99%  (2.6 batch/s)
+    epoch  22  batch   225  loss=0.0359  tf_acc=99%  (2.6 batch/s)
+    epoch  22  batch   250  loss=0.0359  tf_acc=99%  (2.6 batch/s)
+  Epoch  22/50  loss=0.0359  tf_acc=99%  97.0s
+    epoch  23  batch    25  loss=0.0344  tf_acc=99%  (2.4 batch/s)
+    epoch  23  batch    50  loss=0.0334  tf_acc=99%  (2.5 batch/s)
+    epoch  23  batch    75  loss=0.0331  tf_acc=99%  (2.5 batch/s)
+    epoch  23  batch   100  loss=0.0330  tf_acc=99%  (2.5 batch/s)
+    epoch  23  batch   125  loss=0.0332  tf_acc=99%  (2.6 batch/s)
+    epoch  23  batch   150  loss=0.0328  tf_acc=99%  (2.5 batch/s)
+    epoch  23  batch   175  loss=0.0330  tf_acc=99%  (2.5 batch/s)
+    epoch  23  batch   200  loss=0.0332  tf_acc=99%  (2.5 batch/s)
+    epoch  23  batch   225  loss=0.0332  tf_acc=99%  (2.6 batch/s)
+    epoch  23  batch   250  loss=0.0331  tf_acc=99%  (2.6 batch/s)
+  Epoch  23/50  loss=0.0331  tf_acc=99%  97.4s
+    epoch  24  batch    25  loss=0.0266  tf_acc=99%  (2.8 batch/s)
+    epoch  24  batch    50  loss=0.0249  tf_acc=99%  (2.7 batch/s)
+    epoch  24  batch    75  loss=0.0245  tf_acc=99%  (2.7 batch/s)
+    epoch  24  batch   100  loss=0.0247  tf_acc=99%  (2.7 batch/s)
+    epoch  24  batch   125  loss=0.0252  tf_acc=99%  (2.7 batch/s)
+    epoch  24  batch   150  loss=0.0257  tf_acc=99%  (2.7 batch/s)
+    epoch  24  batch   175  loss=0.0265  tf_acc=99%  (2.6 batch/s)
+    epoch  24  batch   200  loss=0.0274  tf_acc=99%  (2.6 batch/s)
+    epoch  24  batch   225  loss=0.0276  tf_acc=99%  (2.6 batch/s)
+    epoch  24  batch   250  loss=0.0277  tf_acc=99%  (2.6 batch/s)
+  Epoch  24/50  loss=0.0277  tf_acc=99%  95.6s
+    epoch  25  batch    25  loss=0.0245  tf_acc=99%  (2.5 batch/s)
+    epoch  25  batch    50  loss=0.0256  tf_acc=99%  (2.6 batch/s)
+    epoch  25  batch    75  loss=0.0248  tf_acc=99%  (2.5 batch/s)
+    epoch  25  batch   100  loss=0.0248  tf_acc=99%  (2.5 batch/s)
+    epoch  25  batch   125  loss=0.0250  tf_acc=99%  (2.6 batch/s)
+    epoch  25  batch   150  loss=0.0248  tf_acc=99%  (2.6 batch/s)
+    epoch  25  batch   175  loss=0.0253  tf_acc=99%  (2.6 batch/s)
+    epoch  25  batch   200  loss=0.0259  tf_acc=99%  (2.6 batch/s)
+    epoch  25  batch   225  loss=0.0266  tf_acc=99%  (2.6 batch/s)
+    epoch  25  batch   250  loss=0.0270  tf_acc=99%  (2.6 batch/s)
+  Epoch  25/50  loss=0.0270  tf_acc=99%  95.9s
+    epoch  26  batch    25  loss=0.0234  tf_acc=99%  (2.4 batch/s)
+    epoch  26  batch    50  loss=0.0248  tf_acc=99%  (2.6 batch/s)
+    epoch  26  batch    75  loss=0.0257  tf_acc=99%  (2.5 batch/s)
+    epoch  26  batch   100  loss=0.0260  tf_acc=99%  (2.6 batch/s)
+    epoch  26  batch   125  loss=0.0264  tf_acc=99%  (2.6 batch/s)
+    epoch  26  batch   150  loss=0.0264  tf_acc=99%  (2.6 batch/s)
+    epoch  26  batch   175  loss=0.0262  tf_acc=99%  (2.6 batch/s)
+    epoch  26  batch   200  loss=0.0264  tf_acc=99%  (2.6 batch/s)
+    epoch  26  batch   225  loss=0.0265  tf_acc=99%  (2.6 batch/s)
+    epoch  26  batch   250  loss=0.0267  tf_acc=99%  (2.6 batch/s)
+  Epoch  26/50  loss=0.0267  tf_acc=99%  96.8s
+    epoch  27  batch    25  loss=0.0215  tf_acc=99%  (2.5 batch/s)
+    epoch  27  batch    50  loss=0.0206  tf_acc=99%  (2.5 batch/s)
+    epoch  27  batch    75  loss=0.0220  tf_acc=99%  (2.4 batch/s)
+    epoch  27  batch   100  loss=0.0222  tf_acc=99%  (2.4 batch/s)
+    epoch  27  batch   125  loss=0.0224  tf_acc=99%  (2.4 batch/s)
+    epoch  27  batch   150  loss=0.0229  tf_acc=99%  (2.5 batch/s)
+    epoch  27  batch   175  loss=0.0229  tf_acc=99%  (2.5 batch/s)
+    epoch  27  batch   200  loss=0.0234  tf_acc=99%  (2.6 batch/s)
+    epoch  27  batch   225  loss=0.0239  tf_acc=99%  (2.6 batch/s)
+    epoch  27  batch   250  loss=0.0242  tf_acc=99%  (2.6 batch/s)
+  Epoch  27/50  loss=0.0242  tf_acc=99%  96.5s
+    epoch  28  batch    25  loss=0.0214  tf_acc=99%  (2.5 batch/s)
+    epoch  28  batch    50  loss=0.0205  tf_acc=99%  (2.5 batch/s)
+    epoch  28  batch    75  loss=0.0208  tf_acc=99%  (2.5 batch/s)
+    epoch  28  batch   100  loss=0.0207  tf_acc=99%  (2.6 batch/s)
+    epoch  28  batch   125  loss=0.0217  tf_acc=99%  (2.6 batch/s)
+    epoch  28  batch   150  loss=0.0221  tf_acc=99%  (2.6 batch/s)
+    epoch  28  batch   175  loss=0.0225  tf_acc=99%  (2.6 batch/s)
+    epoch  28  batch   200  loss=0.0226  tf_acc=99%  (2.6 batch/s)
+    epoch  28  batch   225  loss=0.0235  tf_acc=99%  (2.6 batch/s)
+    epoch  28  batch   250  loss=0.0232  tf_acc=99%  (2.6 batch/s)
+  Epoch  28/50  loss=0.0232  tf_acc=99%  97.4s
+    epoch  29  batch    25  loss=0.0181  tf_acc=99%  (2.7 batch/s)
+    epoch  29  batch    50  loss=0.0182  tf_acc=99%  (2.6 batch/s)
+    epoch  29  batch    75  loss=0.0208  tf_acc=99%  (2.5 batch/s)
+    epoch  29  batch   100  loss=0.0212  tf_acc=99%  (2.5 batch/s)
+    epoch  29  batch   125  loss=0.0215  tf_acc=99%  (2.6 batch/s)
+    epoch  29  batch   150  loss=0.0215  tf_acc=99%  (2.5 batch/s)
+    epoch  29  batch   175  loss=0.0216  tf_acc=99%  (2.6 batch/s)
+    epoch  29  batch   200  loss=0.0219  tf_acc=99%  (2.5 batch/s)
+    epoch  29  batch   225  loss=0.0220  tf_acc=99%  (2.6 batch/s)
+    epoch  29  batch   250  loss=0.0225  tf_acc=99%  (2.6 batch/s)
+  Epoch  29/50  loss=0.0225  tf_acc=99%  97.2s
+    epoch  30  batch    25  loss=0.0213  tf_acc=99%  (2.5 batch/s)
+    epoch  30  batch    50  loss=0.0189  tf_acc=99%  (2.6 batch/s)
+    epoch  30  batch    75  loss=0.0191  tf_acc=99%  (2.5 batch/s)
+    epoch  30  batch   100  loss=0.0193  tf_acc=99%  (2.6 batch/s)
+    epoch  30  batch   125  loss=0.0196  tf_acc=99%  (2.6 batch/s)
+    epoch  30  batch   150  loss=0.0200  tf_acc=99%  (2.6 batch/s)
+    epoch  30  batch   175  loss=0.0202  tf_acc=99%  (2.6 batch/s)
+    epoch  30  batch   200  loss=0.0207  tf_acc=99%  (2.6 batch/s)
+    epoch  30  batch   225  loss=0.0208  tf_acc=99%  (2.6 batch/s)
+    epoch  30  batch   250  loss=0.0212  tf_acc=99%  (2.6 batch/s)
+  ✓ expected: HTMLInputElement
+    got:        HTMLInputElement
+  ✓ expected: HTMLInputElement
+    got:        HTMLInputElement
+  ✓ expected: HTMLDivElement | null
+    got:        HTMLDivElement | null
+  ✗ expected: RovingFocusGroupProps['dir']
+    got:        CSSStyleDeclaration['direction']
+  ✓ expected: AccordionImplProps['dir']
+    got:        AccordionImplProps['dir']
+    → val exact-match (micro): 49.2% (246/500)
+    → val macro acceptable (per-rule): 96.8%
+    per-rule:  rule                                                 em     vp    acc  (n,neg)
+      html_specific_element→html_element                 71%   96%   96%  ( 125,  0)
+      string_literal_union→string                        38%   96%   96%  ( 114,  0)
+      utility_type→unknown                               25%   75%   75%  (  61,  0)
+      indexed_access_type→unknown                        46%   93%   93%  (  54,  0)
+      record_string_value→unknown                        42%   92%   92%  (  38,  0)
+      set→unknown                                        85%  100%  100%  (  27,  0)
+      react_event→synthetic                              58%  100%  100%  (  26,  0)
+      html_specific_element_nullable→html_element_nullable   53%  100%  100%  (  15,  0)
+      map→unknown                                        29%  100%  100%  (  14,  0)
+      promise→unknown                                     0%  100%  100%  (   6,  0)
+      react_refobject→unknown                            40%  100%  100%  (   5,  0)
+      react_mutable_refobject→unknown                    80%  100%  100%  (   5,  0)
+  Epoch  30/50  loss=0.0212  tf_acc=99%  106.2s
+    no improvement (1/5, 4 evals left)
+    epoch  31  batch    25  loss=0.0180  tf_acc=99%  (2.4 batch/s)
+    epoch  31  batch    50  loss=0.0182  tf_acc=99%  (2.5 batch/s)
+    epoch  31  batch    75  loss=0.0191  tf_acc=99%  (2.5 batch/s)
+    epoch  31  batch   100  loss=0.0189  tf_acc=99%  (2.6 batch/s)
+    epoch  31  batch   125  loss=0.0189  tf_acc=99%  (2.6 batch/s)
+    epoch  31  batch   150  loss=0.0193  tf_acc=99%  (2.6 batch/s)
+    epoch  31  batch   175  loss=0.0195  tf_acc=99%  (2.6 batch/s)
+    epoch  31  batch   200  loss=0.0193  tf_acc=99%  (2.6 batch/s)
+    epoch  31  batch   225  loss=0.0195  tf_acc=99%  (2.6 batch/s)
+    epoch  31  batch   250  loss=0.0196  tf_acc=99%  (2.6 batch/s)
+  Epoch  31/50  loss=0.0196  tf_acc=99%  96.9s
+    epoch  32  batch    25  loss=0.0177  tf_acc=99%  (2.6 batch/s)
+    epoch  32  batch    50  loss=0.0179  tf_acc=99%  (2.7 batch/s)
+    epoch  32  batch    75  loss=0.0180  tf_acc=99%  (2.7 batch/s)
+    epoch  32  batch   100  loss=0.0175  tf_acc=99%  (2.7 batch/s)
+    epoch  32  batch   125  loss=0.0178  tf_acc=99%  (2.6 batch/s)
+    epoch  32  batch   150  loss=0.0177  tf_acc=99%  (2.6 batch/s)
+    epoch  32  batch   175  loss=0.0182  tf_acc=99%  (2.6 batch/s)
+    epoch  32  batch   200  loss=0.0183  tf_acc=99%  (2.6 batch/s)
+    epoch  32  batch   225  loss=0.0186  tf_acc=99%  (2.6 batch/s)
+    epoch  32  batch   250  loss=0.0190  tf_acc=99%  (2.6 batch/s)
+  Epoch  32/50  loss=0.0190  tf_acc=99%  96.9s
+    epoch  33  batch    25  loss=0.0142  tf_acc=100%  (2.4 batch/s)
+    epoch  33  batch    50  loss=0.0152  tf_acc=99%  (2.5 batch/s)
+    epoch  33  batch    75  loss=0.0152  tf_acc=99%  (2.5 batch/s)
+    epoch  33  batch   100  loss=0.0158  tf_acc=99%  (2.5 batch/s)
+    epoch  33  batch   125  loss=0.0166  tf_acc=99%  (2.5 batch/s)
+    epoch  33  batch   150  loss=0.0170  tf_acc=99%  (2.5 batch/s)
+    epoch  33  batch   175  loss=0.0175  tf_acc=99%  (2.5 batch/s)
+    epoch  33  batch   200  loss=0.0179  tf_acc=99%  (2.5 batch/s)
+    epoch  33  batch   225  loss=0.0180  tf_acc=99%  (2.6 batch/s)
+    epoch  33  batch   250  loss=0.0182  tf_acc=99%  (2.6 batch/s)
+  Epoch  33/50  loss=0.0182  tf_acc=99%  97.3s
+    epoch  34  batch    25  loss=0.0174  tf_acc=99%  (2.6 batch/s)
+    epoch  34  batch    50  loss=0.0156  tf_acc=99%  (2.7 batch/s)
+    epoch  34  batch    75  loss=0.0164  tf_acc=99%  (2.7 batch/s)
+    epoch  34  batch   100  loss=0.0166  tf_acc=99%  (2.6 batch/s)
+    epoch  34  batch   125  loss=0.0170  tf_acc=99%  (2.6 batch/s)
+    epoch  34  batch   150  loss=0.0172  tf_acc=99%  (2.6 batch/s)
+    epoch  34  batch   175  loss=0.0175  tf_acc=99%  (2.6 batch/s)
+    epoch  34  batch   200  loss=0.0175  tf_acc=99%  (2.6 batch/s)
+    epoch  34  batch   225  loss=0.0174  tf_acc=99%  (2.6 batch/s)
+    epoch  34  batch   250  loss=0.0178  tf_acc=99%  (2.6 batch/s)
+  Epoch  34/50  loss=0.0178  tf_acc=99%  96.4s
+    epoch  35  batch    25  loss=0.0163  tf_acc=99%  (2.6 batch/s)
+    epoch  35  batch    50  loss=0.0151  tf_acc=99%  (2.6 batch/s)
+    epoch  35  batch    75  loss=0.0160  tf_acc=99%  (2.6 batch/s)
+    epoch  35  batch   100  loss=0.0155  tf_acc=99%  (2.7 batch/s)
+    epoch  35  batch   125  loss=0.0156  tf_acc=99%  (2.6 batch/s)
+    epoch  35  batch   150  loss=0.0167  tf_acc=99%  (2.6 batch/s)
+    epoch  35  batch   175  loss=0.0169  tf_acc=99%  (2.6 batch/s)
+    epoch  35  batch   200  loss=0.0172  tf_acc=99%  (2.6 batch/s)
+    epoch  35  batch   225  loss=0.0172  tf_acc=99%  (2.6 batch/s)
+    epoch  35  batch   250  loss=0.0171  tf_acc=99%  (2.6 batch/s)
+  Epoch  35/50  loss=0.0171  tf_acc=99%  96.8s
+    epoch  36  batch    25  loss=0.0153  tf_acc=99%  (2.7 batch/s)
+    epoch  36  batch    50  loss=0.0160  tf_acc=99%  (2.7 batch/s)
+    epoch  36  batch    75  loss=0.0163  tf_acc=99%  (2.7 batch/s)
+    epoch  36  batch   100  loss=0.0162  tf_acc=99%  (2.7 batch/s)
+    epoch  36  batch   125  loss=0.0163  tf_acc=99%  (2.6 batch/s)
+    epoch  36  batch   150  loss=0.0165  tf_acc=99%  (2.7 batch/s)
+    epoch  36  batch   175  loss=0.0160  tf_acc=99%  (2.7 batch/s)
+    epoch  36  batch   200  loss=0.0164  tf_acc=99%  (2.6 batch/s)
+    epoch  36  batch   225  loss=0.0167  tf_acc=99%  (2.6 batch/s)
+    epoch  36  batch   250  loss=0.0165  tf_acc=99%  (2.6 batch/s)
+  Epoch  36/50  loss=0.0165  tf_acc=99%  96.5s
+    epoch  37  batch    25  loss=0.0149  tf_acc=99%  (2.7 batch/s)
+    epoch  37  batch    50  loss=0.0141  tf_acc=99%  (2.5 batch/s)
+    epoch  37  batch    75  loss=0.0143  tf_acc=99%  (2.5 batch/s)
+    epoch  37  batch   100  loss=0.0149  tf_acc=99%  (2.5 batch/s)
+    epoch  37  batch   125  loss=0.0156  tf_acc=99%  (2.6 batch/s)
+    epoch  37  batch   150  loss=0.0157  tf_acc=99%  (2.6 batch/s)
+    epoch  37  batch   175  loss=0.0158  tf_acc=99%  (2.6 batch/s)
+    epoch  37  batch   200  loss=0.0161  tf_acc=99%  (2.6 batch/s)
+    epoch  37  batch   225  loss=0.0163  tf_acc=99%  (2.6 batch/s)
+    epoch  37  batch   250  loss=0.0163  tf_acc=99%  (2.6 batch/s)
+  Epoch  37/50  loss=0.0163  tf_acc=99%  97.1s
+    epoch  38  batch    25  loss=0.0120  tf_acc=100%  (2.3 batch/s)
+    epoch  38  batch    50  loss=0.0130  tf_acc=99%  (2.5 batch/s)
+    epoch  38  batch    75  loss=0.0142  tf_acc=99%  (2.5 batch/s)
+    epoch  38  batch   100  loss=0.0141  tf_acc=99%  (2.6 batch/s)
+    epoch  38  batch   125  loss=0.0142  tf_acc=99%  (2.6 batch/s)
+    epoch  38  batch   150  loss=0.0145  tf_acc=99%  (2.6 batch/s)
+    epoch  38  batch   175  loss=0.0150  tf_acc=99%  (2.6 batch/s)
+    epoch  38  batch   200  loss=0.0154  tf_acc=99%  (2.6 batch/s)
+    epoch  38  batch   225  loss=0.0155  tf_acc=99%  (2.6 batch/s)
+    epoch  38  batch   250  loss=0.0156  tf_acc=99%  (2.6 batch/s)
+  Epoch  38/50  loss=0.0156  tf_acc=99%  96.6s
+    epoch  39  batch    25  loss=0.0144  tf_acc=99%  (2.7 batch/s)
+    epoch  39  batch    50  loss=0.0152  tf_acc=99%  (2.6 batch/s)
+    epoch  39  batch    75  loss=0.0144  tf_acc=99%  (2.5 batch/s)
+    epoch  39  batch   100  loss=0.0147  tf_acc=99%  (2.5 batch/s)
+    epoch  39  batch   125  loss=0.0149  tf_acc=99%  (2.5 batch/s)
+    epoch  39  batch   150  loss=0.0148  tf_acc=99%  (2.6 batch/s)
+    epoch  39  batch   175  loss=0.0147  tf_acc=99%  (2.5 batch/s)
+    epoch  39  batch   200  loss=0.0151  tf_acc=99%  (2.6 batch/s)
+    epoch  39  batch   225  loss=0.0152  tf_acc=99%  (2.6 batch/s)
+    epoch  39  batch   250  loss=0.0154  tf_acc=99%  (2.6 batch/s)
+  Epoch  39/50  loss=0.0154  tf_acc=99%  97.0s
+    epoch  40  batch    25  loss=0.0122  tf_acc=100%  (2.8 batch/s)
+    epoch  40  batch    50  loss=0.0120  tf_acc=100%  (2.7 batch/s)
+    epoch  40  batch    75  loss=0.0126  tf_acc=99%  (2.6 batch/s)
+    epoch  40  batch   100  loss=0.0129  tf_acc=99%  (2.6 batch/s)
+    epoch  40  batch   125  loss=0.0134  tf_acc=99%  (2.6 batch/s)
+    epoch  40  batch   150  loss=0.0138  tf_acc=99%  (2.6 batch/s)
+    epoch  40  batch   175  loss=0.0138  tf_acc=99%  (2.6 batch/s)
+    epoch  40  batch   200  loss=0.0144  tf_acc=99%  (2.6 batch/s)
+    epoch  40  batch   225  loss=0.0146  tf_acc=99%  (2.6 batch/s)
+    epoch  40  batch   250  loss=0.0149  tf_acc=99%  (2.6 batch/s)
+  ✓ expected: HTMLInputElement
+    got:        HTMLInputElement
+  ✓ expected: HTMLInputElement
+    got:        HTMLInputElement
+  ✓ expected: HTMLDivElement | null
+    got:        HTMLDivElement | null
+  ✗ expected: RovingFocusGroupProps['dir']
+    got:        CSSStyleDeclaration['direction']
+  ✓ expected: AccordionImplProps['dir']
+    got:        AccordionImplProps['dir']
+    → val exact-match (micro): 49.8% (249/500)
+    → val macro acceptable (per-rule): 96.8%
+    per-rule:  rule                                                 em     vp    acc  (n,neg)
+      html_specific_element→html_element                 73%   95%   95%  ( 125,  0)
+      string_literal_union→string                        37%   96%   96%  ( 114,  0)
+      utility_type→unknown                               23%   77%   77%  (  61,  0)
+      indexed_access_type→unknown                        46%   91%   91%  (  54,  0)
+      record_string_value→unknown                        45%   92%   92%  (  38,  0)
+      set→unknown                                        89%  100%  100%  (  27,  0)
+      react_event→synthetic                              54%  100%  100%  (  26,  0)
+      html_specific_element_nullable→html_element_nullable   60%  100%  100%  (  15,  0)
+      map→unknown                                        36%  100%  100%  (  14,  0)
+      promise→unknown                                     0%  100%  100%  (   6,  0)
+      react_refobject→unknown                            40%  100%  100%  (   5,  0)
+      react_mutable_refobject→unknown                    80%  100%  100%  (   5,  0)
+  Epoch  40/50  loss=0.0149  tf_acc=99%  105.6s
+    no improvement (2/5, 3 evals left)
+    epoch  41  batch    25  loss=0.0129  tf_acc=99%  (2.5 batch/s)
+    epoch  41  batch    50  loss=0.0129  tf_acc=99%  (2.5 batch/s)
+    epoch  41  batch    75  loss=0.0132  tf_acc=99%  (2.5 batch/s)
+    epoch  41  batch   100  loss=0.0134  tf_acc=99%  (2.6 batch/s)
+    epoch  41  batch   125  loss=0.0139  tf_acc=99%  (2.6 batch/s)
+    epoch  41  batch   150  loss=0.0139  tf_acc=99%  (2.6 batch/s)
+    epoch  41  batch   175  loss=0.0142  tf_acc=99%  (2.6 batch/s)
+    epoch  41  batch   200  loss=0.0142  tf_acc=99%  (2.6 batch/s)
+    epoch  41  batch   225  loss=0.0141  tf_acc=99%  (2.6 batch/s)
+    epoch  41  batch   250  loss=0.0145  tf_acc=99%  (2.6 batch/s)
+  Epoch  41/50  loss=0.0145  tf_acc=99%  97.3s
+    epoch  42  batch    25  loss=0.0113  tf_acc=100%  (2.6 batch/s)
+    epoch  42  batch    50  loss=0.0127  tf_acc=99%  (2.5 batch/s)
+    epoch  42  batch    75  loss=0.0123  tf_acc=99%  (2.5 batch/s)
+    epoch  42  batch   100  loss=0.0130  tf_acc=99%  (2.5 batch/s)
+    epoch  42  batch   125  loss=0.0128  tf_acc=99%  (2.5 batch/s)
+    epoch  42  batch   150  loss=0.0131  tf_acc=99%  (2.5 batch/s)
+    epoch  42  batch   175  loss=0.0135  tf_acc=99%  (2.6 batch/s)
+    epoch  42  batch   200  loss=0.0137  tf_acc=99%  (2.6 batch/s)
+    epoch  42  batch   225  loss=0.0137  tf_acc=99%  (2.6 batch/s)
+    epoch  42  batch   250  loss=0.0142  tf_acc=99%  (2.6 batch/s)
+  Epoch  42/50  loss=0.0142  tf_acc=99%  96.9s
+    epoch  43  batch    25  loss=0.0121  tf_acc=100%  (2.5 batch/s)
+    epoch  43  batch    50  loss=0.0131  tf_acc=99%  (2.5 batch/s)
+    epoch  43  batch    75  loss=0.0130  tf_acc=99%  (2.5 batch/s)
+    epoch  43  batch   100  loss=0.0129  tf_acc=99%  (2.5 batch/s)
+    epoch  43  batch   125  loss=0.0126  tf_acc=99%  (2.6 batch/s)
+    epoch  43  batch   150  loss=0.0128  tf_acc=99%  (2.6 batch/s)
+    epoch  43  batch   175  loss=0.0131  tf_acc=99%  (2.6 batch/s)
+    epoch  43  batch   200  loss=0.0134  tf_acc=99%  (2.6 batch/s)
+    epoch  43  batch   225  loss=0.0135  tf_acc=99%  (2.6 batch/s)
+    epoch  43  batch   250  loss=0.0136  tf_acc=99%  (2.6 batch/s)
+  Epoch  43/50  loss=0.0136  tf_acc=99%  96.5s
+    epoch  44  batch    25  loss=0.0128  tf_acc=99%  (2.6 batch/s)
+    epoch  44  batch    50  loss=0.0125  tf_acc=99%  (2.6 batch/s)
+    epoch  44  batch    75  loss=0.0127  tf_acc=99%  (2.6 batch/s)
+    epoch  44  batch   100  loss=0.0130  tf_acc=99%  (2.5 batch/s)
+    epoch  44  batch   125  loss=0.0131  tf_acc=99%  (2.5 batch/s)
+    epoch  44  batch   150  loss=0.0136  tf_acc=99%  (2.5 batch/s)
+    epoch  44  batch   175  loss=0.0135  tf_acc=99%  (2.5 batch/s)
+    epoch  44  batch   200  loss=0.0134  tf_acc=99%  (2.5 batch/s)
+    epoch  44  batch   225  loss=0.0132  tf_acc=99%  (2.5 batch/s)
+    epoch  44  batch   250  loss=0.0131  tf_acc=99%  (2.6 batch/s)
+  Epoch  44/50  loss=0.0131  tf_acc=99%  97.7s
+    epoch  45  batch    25  loss=0.0107  tf_acc=100%  (2.8 batch/s)
+    epoch  45  batch    50  loss=0.0121  tf_acc=99%  (2.7 batch/s)
+    epoch  45  batch    75  loss=0.0114  tf_acc=99%  (2.6 batch/s)
+    epoch  45  batch   100  loss=0.0116  tf_acc=99%  (2.6 batch/s)
+    epoch  45  batch   125  loss=0.0123  tf_acc=99%  (2.6 batch/s)
+    epoch  45  batch   150  loss=0.0127  tf_acc=99%  (2.6 batch/s)
+    epoch  45  batch   175  loss=0.0127  tf_acc=99%  (2.6 batch/s)
+    epoch  45  batch   200  loss=0.0127  tf_acc=99%  (2.6 batch/s)
+    epoch  45  batch   225  loss=0.0128  tf_acc=99%  (2.6 batch/s)
+    epoch  45  batch   250  loss=0.0129  tf_acc=99%  (2.6 batch/s)
+  Epoch  45/50  loss=0.0129  tf_acc=99%  96.4s
+    epoch  46  batch    25  loss=0.0109  tf_acc=99%  (2.5 batch/s)
+    epoch  46  batch    50  loss=0.0107  tf_acc=99%  (2.5 batch/s)
+    epoch  46  batch    75  loss=0.0113  tf_acc=99%  (2.6 batch/s)
+    epoch  46  batch   100  loss=0.0115  tf_acc=99%  (2.6 batch/s)
+    epoch  46  batch   125  loss=0.0116  tf_acc=99%  (2.5 batch/s)
+    epoch  46  batch   150  loss=0.0118  tf_acc=99%  (2.6 batch/s)
+    epoch  46  batch   175  loss=0.0120  tf_acc=99%  (2.6 batch/s)
+    epoch  46  batch   200  loss=0.0122  tf_acc=99%  (2.6 batch/s)
+    epoch  46  batch   225  loss=0.0124  tf_acc=99%  (2.6 batch/s)
+    epoch  46  batch   250  loss=0.0124  tf_acc=99%  (2.6 batch/s)
+  Epoch  46/50  loss=0.0124  tf_acc=99%  96.9s
+    epoch  47  batch    25  loss=0.0141  tf_acc=99%  (2.4 batch/s)
+    epoch  47  batch    50  loss=0.0124  tf_acc=99%  (2.5 batch/s)
+    epoch  47  batch    75  loss=0.0119  tf_acc=99%  (2.6 batch/s)
+    epoch  47  batch   100  loss=0.0119  tf_acc=99%  (2.6 batch/s)
+    epoch  47  batch   125  loss=0.0124  tf_acc=99%  (2.6 batch/s)
+    epoch  47  batch   150  loss=0.0122  tf_acc=99%  (2.6 batch/s)
+    epoch  47  batch   175  loss=0.0125  tf_acc=99%  (2.6 batch/s)
+    epoch  47  batch   200  loss=0.0125  tf_acc=99%  (2.6 batch/s)
+    epoch  47  batch   225  loss=0.0124  tf_acc=99%  (2.6 batch/s)
+    epoch  47  batch   250  loss=0.0123  tf_acc=99%  (2.6 batch/s)
+  Epoch  47/50  loss=0.0123  tf_acc=99%  95.5s
+    epoch  48  batch    25  loss=0.0120  tf_acc=99%  (2.6 batch/s)
+    epoch  48  batch    50  loss=0.0116  tf_acc=99%  (2.6 batch/s)
+    epoch  48  batch    75  loss=0.0112  tf_acc=99%  (2.5 batch/s)
+    epoch  48  batch   100  loss=0.0115  tf_acc=99%  (2.5 batch/s)
+    epoch  48  batch   125  loss=0.0118  tf_acc=99%  (2.6 batch/s)
+    epoch  48  batch   150  loss=0.0120  tf_acc=99%  (2.6 batch/s)
+    epoch  48  batch   175  loss=0.0120  tf_acc=99%  (2.6 batch/s)
+    epoch  48  batch   200  loss=0.0121  tf_acc=99%  (2.6 batch/s)
+    epoch  48  batch   225  loss=0.0120  tf_acc=99%  (2.6 batch/s)
+    epoch  48  batch   250  loss=0.0121  tf_acc=99%  (2.6 batch/s)
+  Epoch  48/50  loss=0.0121  tf_acc=99%  96.7s
+    epoch  49  batch    25  loss=0.0127  tf_acc=99%  (2.7 batch/s)
+    epoch  49  batch    50  loss=0.0116  tf_acc=99%  (2.7 batch/s)
+    epoch  49  batch    75  loss=0.0122  tf_acc=99%  (2.6 batch/s)
+    epoch  49  batch   100  loss=0.0119  tf_acc=99%  (2.6 batch/s)
+    epoch  49  batch   125  loss=0.0117  tf_acc=99%  (2.6 batch/s)
+    epoch  49  batch   150  loss=0.0118  tf_acc=99%  (2.6 batch/s)
+    epoch  49  batch   175  loss=0.0116  tf_acc=99%  (2.6 batch/s)
+    epoch  49  batch   200  loss=0.0118  tf_acc=99%  (2.6 batch/s)
+    epoch  49  batch   225  loss=0.0119  tf_acc=99%  (2.6 batch/s)
+    epoch  49  batch   250  loss=0.0119  tf_acc=99%  (2.6 batch/s)
+  Epoch  49/50  loss=0.0119  tf_acc=99%  96.9s
+    epoch  50  batch    25  loss=0.0121  tf_acc=99%  (2.3 batch/s)
+    epoch  50  batch    50  loss=0.0117  tf_acc=99%  (2.4 batch/s)
+    epoch  50  batch    75  loss=0.0117  tf_acc=99%  (2.5 batch/s)
+    epoch  50  batch   100  loss=0.0121  tf_acc=99%  (2.5 batch/s)
+    epoch  50  batch   125  loss=0.0122  tf_acc=99%  (2.5 batch/s)
+    epoch  50  batch   150  loss=0.0121  tf_acc=99%  (2.5 batch/s)
+    epoch  50  batch   175  loss=0.0119  tf_acc=99%  (2.6 batch/s)
+    epoch  50  batch   200  loss=0.0118  tf_acc=99%  (2.6 batch/s)
+    epoch  50  batch   225  loss=0.0120  tf_acc=99%  (2.6 batch/s)
+    epoch  50  batch   250  loss=0.0118  tf_acc=99%  (2.6 batch/s)
+  ✓ expected: HTMLInputElement
+    got:        HTMLInputElement
+  ✓ expected: HTMLInputElement
+    got:        HTMLInputElement
+  ✓ expected: HTMLDivElement | null
+    got:        HTMLDivElement | null
+  ✗ expected: RovingFocusGroupProps['dir']
+    got:        CSSStyleDeclaration['direction']
+  ✓ expected: AccordionImplProps['dir']
+    got:        AccordionImplProps['dir']
+    → val exact-match (micro): 49.4% (247/500)
+    → val macro acceptable (per-rule): 96.4%
+    per-rule:  rule                                                 em     vp    acc  (n,neg)
+      html_specific_element→html_element                 70%   94%   94%  ( 125,  0)
+      string_literal_union→string                        36%   96%   96%  ( 114,  0)
+      utility_type→unknown                               25%   70%   70%  (  61,  0)
+      indexed_access_type→unknown                        46%   93%   93%  (  54,  0)
+      record_string_value→unknown                        45%   92%   92%  (  38,  0)
+      set→unknown                                        89%  100%  100%  (  27,  0)
+      react_event→synthetic                              58%  100%  100%  (  26,  0)
+      html_specific_element_nullable→html_element_nullable   67%  100%  100%  (  15,  0)
+      map→unknown                                        29%  100%  100%  (  14,  0)
+      promise→unknown                                     0%  100%  100%  (   6,  0)
+      react_refobject→unknown                            40%  100%  100%  (   5,  0)
+      react_mutable_refobject→unknown                    80%  100%  100%  (   5,  0)
+  Epoch  50/50  loss=0.0118  tf_acc=99%  107.3s
+    no improvement (3/5, 2 evals left)
+
+Restored best model: epoch 20, val=97.1%
+
+============================================================
+FINAL VALIDATION — generation on 4369 held-out pairs (full set)
+============================================================
+  ✓ expected: HTMLInputElement
+    got:        HTMLInputElement
+  ✓ expected: HTMLInputElement
+    got:        HTMLInputElement
+  ✓ expected: HTMLDivElement | null
+    got:        HTMLDivElement | null
+  ✗ expected: RovingFocusGroupProps['dir']
+    got:        CSSStyleDeclaration['direction']
+  ✓ expected: AccordionImplProps['dir']
+    got:        AccordionImplProps['dir']
+  ✗ expected: React.RefObject<AlertDialogContentElement | null>
+    got:        React.RefObject<TamaguiElement | null>
+  ✗ expected: PrimitiveDivProps['aria-relevant']
+    got:        React.CSSProperties['backgroundColor']
+  ✓ expected: React.RefObject<CollectionElement | null>
+    got:        React.RefObject<CollectionElement | null>
+  ✗ expected: Map<
+      React.RefObject<ItemElement | null>,
+      { ref: React.RefObject<ItemElement | null> } & ItemData
+    >
+    got:        Map<
+      React.RefObject<ItemElement | undefined, T>
+  ✓ expected: ContextValue['itemMap']
+    got:        ContextValue['itemMap']
+  ✓ expected: HTMLButtonElement
+    got:        HTMLButtonElement
+  ✓ expected: HTMLInputElement
+    got:        HTMLInputElement
+  ✓ expected: HTMLInputElement
+    got:        HTMLInputElement
+  ✓ expected: HTMLFormElement
+    got:        HTMLFormElement
+  ✓ expected: React.MutableRefObject<boolean>
+    got:        React.MutableRefObject<boolean>
+
+Validation exact-match (micro): 43.4% (1896/4369)
+Validation macro acceptable (per-rule): 93.1%
+    per-rule:  rule                                                 em     vp    acc  (n,neg)
+      html_specific_element→html_element                 66%   93%   89%  ( 909,184)
+      indexed_access_type→unknown                        35%   92%   91%  ( 782,134)
+      utility_type→unknown                               35%   76%   78%  ( 742,147)
+      string_literal_union→string                        37%   98%   95%  ( 635,146)
+      react_event→synthetic                              45%   95%   92%  ( 415, 36)
+      record_string_value→unknown                        37%   94%   86%  ( 252, 36)
+      promise→unknown                                    11%   92%   88%  ( 112,  5)
+      html_specific_element_nullable→html_element_nullable   56%   88%   83%  ( 103, 25)
+      react_refobject→unknown                            45%  100%  100%  (  77,  0)
+      template_literal_type→string                       41%   93%   92%  (  74, 13)
+      map→unknown                                        13%   99%   99%  (  69,  0)
+      set→unknown                                        64%  100%  100%  (  67,  1)
+      react_event_handler→generic                        64%   98%   98%  (  45,  0)
+      react_mutable_refobject→unknown                    50%  100%  100%  (  32,  0)
+      custom_event→unknown                               12%   92%   92%  (  25,  0)
+      react_specific_event_handler_alias→generic         47%  100%  100%  (  19,  0)
+      react_dispatch_setstateaction→unknown              45%  100%  100%  (  11,  0)
+  ✗ expected: 'realClick' | 'realTouch'
+    got:        're-b' | 'collapsed'
+  ✗ expected: 'realClick' | 'realTouch'
+    got:        're-bed' | 'remove'
+  ✗ expected: 'ltr' | 'rtl'
+    got:        'rtl' | 'ltr'
+  ✓ expected: HTMLInputElement
+    got:        HTMLInputElement
+  ✓ expected: HTMLInputElement
+    got:        HTMLInputElement
+Train sample exact-match: 88.0%
+
+============================================================
+SUMMARY
+============================================================
+  Model:      8,488,960 params on cuda
+  Data:       23912 train / 4369 val
+  Training:   50 epochs max, ran 50 epochs, lr_schedule=cosine
+  Final loss: 0.0118  tf_acc=99%
+  Best epoch:                20
+  Val exact-match (micro):   43.4%
+  Val macro acceptable:      93.1%
+  Best val (during train):   97.1%
+  Train exact-match:         88.0%
+
+  Checkpoint saved: /home/stan/workspace/ai-lab/packages/ts-type-refiner/checkpoints/refiner.pt
+  Tokenizer saved:  /home/stan/workspace/ai-lab/packages/ts-type-refiner/tokenizer.json
