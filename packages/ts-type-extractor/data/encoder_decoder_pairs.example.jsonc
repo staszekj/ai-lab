@@ -1,0 +1,49 @@
+{
+  // Two real rows from encoder_decoder_pairs.jsonl (presentation-friendly).
+  "examples": {
+    "A": {
+      // Example A: generic Map<K, V> refinement (Java-friendly).
+
+      // Rule + metadata + degraded snippet consumed by the model.
+      "input": "[REFINE rule=map→unknown | kind=variable | name=observedElements | degraded=Map<unknown, unknown>]\n---\nconst observedElements: Map<unknown, unknown> = new Map();",
+
+      // Expected precise replacement for degraded type.
+      "target": "Map<Measurable, ObservedData>",
+
+      // Diagnostic fields (not required by model runtime, useful for analysis/reports).
+      "rule": "map→unknown",
+      "repo": "radix-primitives",
+      "file": "packages/core/rect/src/observe-element-rect.ts",
+      "line": 68,
+      "kind": "variable",
+      "name": "observedElements",
+      "degradedType": "Map<unknown, unknown>",
+      "preciseType": "Map<Measurable, ObservedData>",
+      "siblings": "",
+      "split": "train"
+    },
+    "B": {
+      // Example B: true negative pair for Map<K, V>.
+      // Here the model should keep the type unchanged.
+
+      // Rule + metadata + degraded snippet consumed by the model.
+      "input": "[REFINE rule=map→unknown | kind=parameter | name=test | degraded=Map<unknown, unknown>]\n---\n                    public constructor(private readonly test: Map<unknown, unknown>) {}",
+
+      // For negative pairs, target stays the same as degraded type.
+      "target": "Map<unknown, unknown>",
+
+      // Diagnostic fields (not required by model runtime, useful for analysis/reports).
+      "rule": "map→unknown",
+      "repo": "fast",
+      "file": "packages/fast-element/src/di/di.get.pw.spec.ts",
+      "line": 430,
+      "kind": "parameter",
+      "name": "test",
+      "degradedType": "Map<unknown, unknown>",
+      "preciseType": "Map<unknown, unknown>",
+      "siblings": "",
+      "isNegative": true,
+      "split": "train"
+    }
+  }
+}

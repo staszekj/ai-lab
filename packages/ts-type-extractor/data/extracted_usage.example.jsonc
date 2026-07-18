@@ -1,0 +1,54 @@
+{
+  // Example A (Java-friendly): generic Map<K, V> style, very similar to Java generics.
+  "A": {
+    // Repository from the usage corpus
+    "repo": "react-spectrum",
+
+    // File and line where the annotation was extracted
+    "file": "packages/dev/parcel-reporter-turbosnap-stats/helpers.ts",
+    "line": 55,
+
+    // Annotation metadata
+    "kind": "parameter",
+    "name": "statsMap",
+    "typeText": "Map<string, Module>",
+
+    // Exact source snippet used later to build model input
+    "context": "export function rewriteStoryVirtuals(statsMap: Map<string, Module>): void {",
+
+    // Character offsets of typeText inside context
+    "typeStart": 47,
+    "typeEnd": 66,
+
+    // Optional local context signals
+    "siblings": "[-> void]",
+    "containingDecl": "rewriteStoryVirtuals"
+  },
+
+  // Example B: source annotation used by a negative pair for Map<K, V>.
+  // Note: in negative pairs, degraded and precise types are intentionally identical.
+  "B": {
+    // Repository from the usage corpus
+    "repo": "fast",
+
+    // File and line where the annotation was extracted
+    "file": "packages/fast-element/src/di/di.get.pw.spec.ts",
+    "line": 430,
+
+    // Annotation metadata
+    "kind": "parameter",
+    "name": "test",
+    "typeText": "Map<unknown, unknown>",
+
+    // Exact source snippet used later to build model input
+    "context": "                    public constructor(private readonly test: Map<unknown, unknown>) {}",
+
+    // Character offsets of typeText inside context
+    "typeStart": 62,
+    "typeEnd": 83,
+
+    // Optional local context signals
+    "siblings": "",
+    "containingDecl": "Foo"
+  }
+}
