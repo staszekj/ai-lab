@@ -226,7 +226,9 @@ def main() -> None:
     print(f"  Tgt tokens: min={min(tgt_lens)} max={max(tgt_lens)} avg={sum(tgt_lens)//len(tgt_lens)}")
 
     # ── Model ─────────────────────────────────────────────────────────
-    max_seq = max(max(src_lens), max(tgt_lens)) + 4
+    # Keep a practical floor for inference prompts. Tiny demo datasets can
+    # produce very short observed lengths, which then crash on real inputs.
+    max_seq = max(256, max(max(src_lens), max(tgt_lens)) + 4)
     model_config = dict(
         vocab_size  = tok.vocab_size,
         max_seq_len = max_seq,

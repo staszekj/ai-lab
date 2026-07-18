@@ -6,6 +6,33 @@
  *   2. refiner-infer      (uv run --package ts-type-refiner)
  *   3. refiner-apply.ts   (sibling: packages/ts-type-extractor)
  *
+ * Conceptually:
+ *   - Stage 1 answers: "Which type annotations already look degraded and are
+ *     worth sending to the model?"
+ *   - Stage 2 answers: "Given one degraded annotation plus local context,
+ *     what more precise type should replace it?"
+ *   - Stage 3 answers: "Which accepted suggestions can be written back to the
+ *     source file safely?"
+ *
+ * Example full flow:
+ *   source code:
+ *     const observedElements: Map<unknown, unknown> = new Map();
+ *
+ *   locate candidate:
+ *     {
+ *       file: ".../observe-element-rect.ts",
+ *       kind: "variable",
+ *       name: "observedElements",
+ *       degradedType: "Map<unknown, unknown>",
+ *       rule: "map→unknown"
+ *     }
+ *
+ *   infer suggestion:
+ *     Map<Measurable, ObservedData>
+ *
+ *   apply rewrite:
+ *     const observedElements: Map<Measurable, ObservedData> = new Map();
+ *
  * Intermediate artifacts live under ./tmp/ inside this package so they
  * don't pollute /tmp and are easy to inspect after a run.
  *
@@ -135,6 +162,27 @@ function main(): void {
   console.log(`  Output:     ${args.outSuffix ? `sibling "*.${args.outSuffix}.<ext>" files` : "in-place (originals overwritten)"}`);
 
   // ── 1. Locate ────────────────────────────────────────────────────
+  // Scans the target files and emits one JSONL row per degraded-looking type.
+  // This stage does NOT run the model. It only uses the hand-written RULES
+  // table from refiner-locate.ts.
+  //
+  // Example source:
+  //   const observedElements: Map<unknown, unknown> = new Map();
+  //
+  // Example candidate row written to candidates.jsonl:
+  //   {
+  //     id: "...:1234",
+  //     file: "samples/Foo.tsx",
+  //     line: 12,
+  //     start: 88,
+  //     end: 109,
+  //     kind: "variable",
+  //     name: "observedElements",
+  //     context: "const observedElements: Map<unknown, unknown> = new Map();",
+  //     degradedType: "Map<unknown, unknown>",
+  //     rule: "map→unknown",
+  //     siblings: ""
+  //   }
   banner("[1/3] refiner-locate");
   const locateArgs = [
     "tsx", "src/refiner-locate.ts",
@@ -150,6 +198,38 @@ function main(): void {
   }
 
   // ── 2. Infer ─────────────────────────────────────────────────────
+  // This is the ML stage: the trained checkpoint is loaded and asked to refine
+  // every candidate produced above.
+  //
+  // For each candidate, infer.py builds a prompt of the form:
+  //   [REFINE rule=map→unknown | kind=variable | name=observedElements
+  //    | degraded=Map<unknown, unknown>]
+  //   ---
+  //   const observedElements: Map<unknown, unknown> = new Map();
+  //
+  // The model then proposes one or more candidate outputs, for example:
+  //   1. Map<Measurable, ObservedData>
+  //   2. Map<string, boolean>
+  //   3. Map<any, any>
+  //
+  // infer.py validates these proposals against the rule-specific validator and
+  // log-prob threshold, then writes edits.jsonl rows such as:
+  //   accepted=true:
+  //     {
+  //       file: "samples/Foo.tsx",
+  //       start: 88,
+  //       end: 109,
+  //       degradedType: "Map<unknown, unknown>",
+  //       suggestion: "Map<Measurable, ObservedData>",
+  //       accepted: true,
+  //       ruleValidatorPassed: true
+  //     }
+  //
+  //   accepted=false:
+  //     {
+  //       ..., suggestion: "Map<any, any>", accepted: false,
+  //       reason: "validator_failed" | "logprob ... < threshold"
+  //     }
   banner("[2/3] refiner-infer");
   const inferArgs = [
     "run", "--package", "ts-type-refiner", "refiner-infer",
@@ -162,6 +242,18 @@ function main(): void {
   run("uv", inferArgs, REPO_ROOT);
 
   // ── 3. Apply ─────────────────────────────────────────────────────
+  // This is a deterministic file-rewrite step. No model runs here.
+  // The applier only takes accepted edits and splices them into source files,
+  // while double-checking that the original byte range still contains exactly
+  // the degradedType we located earlier.
+  //
+  // Example accepted edit:
+  //   degradedType = "Map<unknown, unknown>"
+  //   suggestion   = "Map<Measurable, ObservedData>"
+  //
+  // Example rewrite:
+  //   before: const observedElements: Map<unknown, unknown> = new Map();
+  //   after:  const observedElements: Map<Measurable, ObservedData> = new Map();
   banner("[3/3] refiner-apply");
   const applyArgs = [
     "tsx", path.join(TS_EXTRACTOR_DIR, "src", "refiner-apply.ts"),

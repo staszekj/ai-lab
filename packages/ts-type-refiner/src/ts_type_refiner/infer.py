@@ -24,6 +24,45 @@ Usage:
         --checkpoint packages/ts-type-refiner/checkpoints/refiner.pt \\
         --tokenizer  packages/ts-type-refiner/tokenizer.json \\
         [--min-logprob -8.0]
+
+Worked example:
+    Candidate row from refiner-locate:
+        {
+            "file": "samples/Foo.tsx",
+            "kind": "variable",
+            "name": "observedElements",
+            "context": "const observedElements: Map<unknown, unknown> = new Map();",
+            "degradedType": "Map<unknown, unknown>",
+            "rule": "map→unknown",
+            "siblings": ""
+        }
+
+    Prompt built for the model:
+        [REFINE rule=map→unknown | kind=variable | name=observedElements | degraded=Map<unknown, unknown>]
+        ---
+        const observedElements: Map<unknown, unknown> = new Map();
+
+    Possible model outputs:
+        - Map<Measurable, ObservedData>
+        - Map<string, boolean>
+        - Map<any, any>
+
+    Validation logic:
+        - the proposal must satisfy the validator for rule "map→unknown"
+        - the proposal must pass the min-logprob threshold
+        - if multiple rule hypotheses exist for one source span, the best
+          accepted one wins for that span
+
+    Example accepted edit row:
+        {
+            "file": "samples/Foo.tsx",
+            "start": 24,
+            "end": 45,
+            "degradedType": "Map<unknown, unknown>",
+            "suggestion": "Map<Measurable, ObservedData>",
+            "accepted": true,
+            "reason": "ok"
+        }
 """
 
 from __future__ import annotations
