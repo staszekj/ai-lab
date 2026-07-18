@@ -6,3 +6,4 @@ dist/
 data/*
 !data/encoder_decoder_pairs.example.jsonc
 !data/extracted_usage.example.jsonc
+!data/encoder_decoder_pairs.report.md
