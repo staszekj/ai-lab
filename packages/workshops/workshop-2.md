@@ -5,7 +5,7 @@
 
 ## Abstract
 
-This training is a ground-up walkthrough of a complete encoder-decoder Transformer, from raw token IDs to trained weights. The same TypeScript type refinement system from Training 1 provides the running example, but again **the domain is incidental**. The model, the trainer, and the checkpoint module in `packages/core` know nothing about TypeScript — they are entirely domain-agnostic. The type-system specifics that made Training 1 concrete (validators, prompt format, degradation rules) are not revisited here.
+This training is a ground-up walkthrough of a complete encoder-decoder Transformer, from raw token IDs to trained weights. The same TypeScript type refinement system from Training 1 provides the running example, but again **the domain is incidental**. The model, the trainer, and the checkpoint module in `packages/ts-type-refiner` know nothing about TypeScript — they are entirely domain-agnostic. The type-system specifics that made Training 1 concrete (validators, prompt format, degradation rules) are not revisited here.
 
 The subject of this training is the model itself:
 

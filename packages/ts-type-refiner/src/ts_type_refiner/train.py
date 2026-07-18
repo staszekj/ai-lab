@@ -8,11 +8,11 @@ specific to the ts-type-refiner domain:
     2. Building the dataset and a train/val split
     3. Choosing model hyper-parameters from the data
     4. Defining the eval semantics (autoregressive exact-match accuracy)
-    5. Wiring the above into `core.trainer.train(...)` and
-       `core.checkpoint.save(...)`
+     5. Wiring the above into `ts_type_refiner.trainer.train(...)` and
+         `ts_type_refiner.checkpoint.save(...)`
 
 Everything else (forward/backward, optimizer, grad-clip, log-prob,
-state_dict serialization) lives in `core` and stays domain-agnostic.
+state_dict serialization) lives in shared local modules in this package.
 
 Usage:
     uv run --package ts-type-refiner refiner-train
@@ -25,9 +25,9 @@ from pathlib import Path
 
 import torch
 
-from core.checkpoint import load as load_checkpoint, save as save_checkpoint
-from core.encoder_decoder_model import EncoderDecoderModel
-from core.trainer import EpochStats, TrainConfig, train
+from ts_type_refiner.checkpoint import load as load_checkpoint, save as save_checkpoint
+from ts_type_refiner.encoder_decoder_model import EncoderDecoderModel
+from ts_type_refiner.trainer import EpochStats, TrainConfig, train
 
 from ts_type_refiner.dataset import TypeRefinerDataset, train_val_split
 from ts_type_refiner.tokenizer import build_from_jsonl
@@ -170,6 +170,16 @@ def print_rule_breakdown(by_rule: dict[str, dict[str, int]], top_n: int = 12) ->
 
 def main() -> None:
     # ── CLI args ──────────────────────────────────────────────────────
+    # This script is intentionally small at the CLI level: it mostly wires
+    # together the dataset, model, evaluation logic, and checkpoint policy.
+    #
+    # Example:
+    #   uv run --package ts-type-refiner refiner-train --epochs 50 --patience 3
+    #
+    # Meaning:
+    #   - train for at most 50 epochs
+    #   - run validation every `eval_every` epochs from TrainConfig
+    #   - stop early if validation does not improve for 3 eval rounds
     import argparse
 
     parser = argparse.ArgumentParser()
@@ -204,30 +214,62 @@ def main() -> None:
     cli = parser.parse_args()
 
     # ── Device ────────────────────────────────────────────────────────
+    # Training runs on CUDA when available, otherwise on CPU.
+    # Nothing else in this file depends on the device choice.
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Device: {device}")
 
     # ── Tokenizer ─────────────────────────────────────────────────────
+    # We build a BPE tokenizer directly from the training JSONL.
+    # It learns TypeScript-specific subword patterns from BOTH:
+    #   - encoder inputs (prompts like [REFINE rule=...])
+    #   - decoder targets (precise type strings)
+    #
+    # Example target fragments that become tokenizable units:
+    #   Map<Measurable, ObservedData>
+    #   React.Dispatch<React.SetStateAction<boolean>>
+    #   'realClick' | 'realTouch'
     print(f"Building BPE tokenizer from {DATA_PATH}...")
     tok = build_from_jsonl(DATA_PATH, vocab_size=2048)
     tok.save(TOKENIZER_PATH)
     print(f"  {tok}  saved to {TOKENIZER_PATH}")
 
     # ── Dataset ───────────────────────────────────────────────────────
+    # The dataset reads ready-made encoder/decoder pairs from JSONL.
+    # Each row already contains:
+    #   input  = full refine prompt
+    #   target = expected precise type text
+    #
+    # Example row shape:
+    #   input  = "[REFINE rule=map→unknown | kind=variable | ...]\n---\nconst x: Map<unknown, unknown> = new Map();"
+    #   target = "Map<Measurable, ObservedData>"
+    #
+    # train_val_split prefers the precomputed `split` field from JSONL so that
+    # identical prompts cannot leak across train/validation.
     ds = TypeRefinerDataset(DATA_PATH, tok, max_src_len=256, max_tgt_len=64)
     train_idx, val_idx = train_val_split(ds, val_ratio=0.15)
     print(f"  Pairs: {len(ds)}  train={len(train_idx)}  val={len(val_idx)}")
 
-    # Inspect token lengths so we can size `max_seq_len` to fit the data
-    # exactly — saves embedding-table memory vs. a generous default.
+    # Inspect token lengths before building the model.
+    # We want a `max_seq_len` large enough for real prompts, but not absurdly
+    # oversized. The actual tensors the model sees are token IDs after BPE, so
+    # raw string length is not what matters here.
     src_lens = [len(tok.encode(ds.pairs[i][0])[:ds.max_src_len]) for i in range(len(ds))]
     tgt_lens = [len(tok.encode(ds.pairs[i][1])[:ds.max_tgt_len]) for i in range(len(ds))]
     print(f"  Src tokens: min={min(src_lens)} max={max(src_lens)} avg={sum(src_lens)//len(src_lens)}")
     print(f"  Tgt tokens: min={min(tgt_lens)} max={max(tgt_lens)} avg={sum(tgt_lens)//len(tgt_lens)}")
 
     # ── Model ─────────────────────────────────────────────────────────
-    # Keep a practical floor for inference prompts. Tiny demo datasets can
-    # produce very short observed lengths, which then crash on real inputs.
+    # The model is a small encoder-decoder transformer.
+    # `max_seq_len` is chosen from observed token lengths, but with a safety
+    # floor of 256 so tiny demo datasets do not produce a checkpoint that later
+    # crashes on realistic inference prompts.
+    #
+    # Example failure we are protecting against:
+    #   - tiny toy dataset yields observed max source length ~40 tokens
+    #   - checkpoint is trained with max_seq_len=44
+    #   - real prompt at inference is 90 tokens long
+    #   - model asserts because source length exceeds model capacity
     max_seq = max(256, max(max(src_lens), max(tgt_lens)) + 4)
     model_config = dict(
         vocab_size  = tok.vocab_size,
@@ -240,11 +282,17 @@ def main() -> None:
     model = EncoderDecoderModel(EncoderDecoderModel.Config(**model_config)).to(device)
 
     total_params = sum(p.numel() for p in model.parameters())
-    print(f"\nModel: EncoderDecoderModel")
+    print("\nModel: EncoderDecoderModel")
     print(f"  vocab={tok.vocab_size} d_model=256 heads=8 layers=4 max_seq={max_seq}")
     print(f"  Parameters: {total_params:,}")
 
     # ── Training config ───────────────────────────────────────────────
+    # This config governs the OPTIMIZATION LOOP, not the transformer shape.
+    #
+    # Important values here:
+    #   - eval_every=10: run generation-based validation every 10 epochs
+    #   - log_every_batches=25: mid-epoch heartbeat so long runs show progress
+    #   - balance_rules: optional sampling strategy from the CLI, wired below
     train_cfg = TrainConfig(
         epochs            = cli.epochs,
         lr                = 3e-4,
@@ -264,8 +312,15 @@ def main() -> None:
     print(f"{'='*60}")
 
     # ── Wire callbacks for the pure-function trainer ──────────────────
-    # `train_batches` MUST be a factory: a fresh iterable every epoch
-    # so that `shuffle=True` actually re-shuffles each pass.
+    # `train_batches` is a FACTORY, not a one-shot generator.
+    # The shared trainer calls it once per epoch to get a fresh iterable.
+    # That matters because:
+    #   - normal training wants a new shuffle every epoch
+    #   - balanced training wants a new weighted sample every epoch
+    #
+    # Two modes:
+    #   - default: uniform batches over train_idx
+    #   - --balance-rules: oversample rare rules with 1/sqrt(count(rule))
     def train_batches():
         if cli.balance_rules:
             return ds.iter_balanced_batches(
@@ -277,7 +332,23 @@ def main() -> None:
         return ds.iter_batches(batch_size, device=device, shuffle=True, indices=train_idx)
 
     def eval_fn(m: EncoderDecoderModel) -> float:
-        # Mid-training: capped slice for speed.
+        # Mid-training validation runs on a capped prefix of the validation set
+        # for speed. This is generation-time evaluation, not teacher-forced loss.
+        #
+        # What happens here for each validation example:
+        #   1. build/gather the source prompt from dataset.pairs[idx]
+        #   2. autoregressively generate a predicted target type
+        #   3. score it with the rule-aware evaluation semantics
+        #
+        # Example positive pair:
+        #   input:  [REFINE ... degraded=Map<unknown, unknown>] ...
+        #   target: Map<Measurable, ObservedData>
+        #   good output: validator accepts the generated type
+        #
+        # Example negative pair:
+        #   input:  [REFINE ... degraded=Map<unknown, unknown>] ...
+        #   target: Map<unknown, unknown>
+        #   good output: model preserves the degraded form exactly
         eval_idx = val_idx[:eval_samples]
         em_acc, by_rule, macro_acc = evaluate_exact_match(m, ds, eval_idx, device, max_print=5)
         print(f"    → val exact-match (micro): {em_acc:.1%} ({int(em_acc*len(eval_idx))}/{len(eval_idx)})")
@@ -288,6 +359,10 @@ def main() -> None:
         return macro_acc
 
     # State captured across epochs by closures — no globals.
+    # This is the mutable training progress used for:
+    #   - best-checkpoint tracking
+    #   - patience / early stopping
+    #   - summary reporting after the loop exits
     progress: dict = {
         "best_val": 0.0,
         "best_val_epoch": 0,
@@ -299,18 +374,29 @@ def main() -> None:
     }
 
     def on_epoch_end(stats: EpochStats) -> bool | None:
+        # This callback is where TRAINING POLICY lives.
+        # The shared trainer knows only how to optimize batches; it does not know
+        # what "best" means for this domain. Here we decide:
+        #   - when validation improved enough to save best checkpoint
+        #   - when patience is exhausted and training should stop early
+        #
+        # In other words:
+        #   ts_type_refiner.trainer.train(...) = mechanics of optimization
+        #   on_epoch_end(...)       = ts-type-refiner-specific control policy
         progress["last_loss"]  = stats.train_loss
         progress["last_acc"]   = stats.train_tf_acc
         progress["last_epoch"] = stats.epoch
-        # Always print every epoch — on weak GPUs (no tensor cores) one
-        # epoch can take minutes and "every 5" is too sparse for the user
-        # to see the run is making progress.
+        # Always print every epoch: on slower hardware a single epoch can take
+        # minutes, so sparse logging makes the run look frozen.
         print(f"  Epoch {stats.epoch:3d}/{train_cfg.epochs}  "
               f"loss={stats.train_loss:.4f}  "
               f"tf_acc={stats.train_tf_acc:.0%}  "
               f"{stats.elapsed_s:.1f}s", flush=True)
         if stats.val_metric is not None:
             if stats.val_metric > progress["best_val"]:
+                # Validation improved -> remember this epoch and save a separate
+                # best checkpoint immediately. This file can be overwritten many
+                # times during one run as the model improves.
                 progress["best_val"]         = stats.val_metric
                 progress["best_val_epoch"]   = stats.epoch
                 progress["patience_counter"] = 0
@@ -325,6 +411,9 @@ def main() -> None:
                 print(f"    ✓ new best {stats.val_metric:.1%} @ epoch {stats.epoch}"
                       f" → {BEST_CHECKPOINT_PATH.name}", flush=True)
             elif cli.patience > 0:
+                # Validation did not improve -> count one patience strike.
+                # When the strike count reaches the configured patience, ask the
+                # trainer to break out of the epoch loop.
                 progress["patience_counter"] += 1
                 remaining = cli.patience - progress["patience_counter"]
                 print(f"    no improvement "
@@ -338,6 +427,13 @@ def main() -> None:
         return None
 
     # ── Train ─────────────────────────────────────────────────────────
+    # This is the hand-off point into the generic optimization loop.
+    # From here, the trainer will:
+    #   1. iterate epochs
+    #   2. consume batches from train_batches()
+    #   3. compute loss/backprop/update
+    #   4. occasionally call eval_fn(model)
+    #   5. call on_epoch_end(stats), which may request early stop
     train(
         model         = model,
         train_batches = train_batches,
@@ -348,6 +444,9 @@ def main() -> None:
     )
 
     # ── Restore best weights ──────────────────────────────────────────
+    # After the loop ends, the model in memory may correspond to the LAST epoch,
+    # not the BEST epoch. We therefore reload the best checkpoint before running
+    # the full validation pass and before saving the final public checkpoint.
     if BEST_CHECKPOINT_PATH.exists():
         ckpt = load_checkpoint(BEST_CHECKPOINT_PATH, device)
         model.load_state_dict(ckpt.state_dict)
@@ -355,6 +454,9 @@ def main() -> None:
               f" val={progress['best_val']:.1%}")
 
     # ── Final evaluation ──────────────────────────────────────────────
+    # Mid-training eval used only a slice for speed. Here we run generation on
+    # the FULL validation set so the summary reflects the restored best model
+    # against all held-out data.
     print(f"\n{'='*60}")
     print(f"FINAL VALIDATION — generation on {len(val_idx)} held-out pairs (full set)")
     print(f"{'='*60}")
@@ -368,8 +470,13 @@ def main() -> None:
     print(f"Train sample exact-match: {train_em:.1%}")
 
     # ── Summary ───────────────────────────────────────────────────────
+    # Final report combines:
+    #   - dataset size
+    #   - how many epochs actually ran
+    #   - final train-side diagnostics
+    #   - best validation numbers used for checkpoint selection
     print(f"\n{'='*60}")
-    print(f"SUMMARY")
+    print("SUMMARY")
     print(f"{'='*60}")
     print(f"  Model:      {total_params:,} params on {device}")
     print(f"  Data:       {len(train_idx)} train / {len(val_idx)} val")
@@ -387,6 +494,9 @@ def main() -> None:
     print(f"  Train exact-match:         {train_em:.1%}")
 
     # ── Save checkpoint ───────────────────────────────────────────────
+    # Public output checkpoint. At this point `model` already contains the
+    # restored BEST weights, so refiner.pt becomes the artifact used later by
+    # refiner-infer in the playground/runtime pipeline.
     save_checkpoint(
         model,
         CHECKPOINT_PATH,

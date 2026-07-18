@@ -18,8 +18,8 @@ The companion package `ts-type-extractor` produces both the training data
 | `ts_type_refiner.tokenizer` | BPE tokenizer (HuggingFace `tokenizers`) with `<pad>` `<bos>` `<eos>` `<unk>` |
 | `ts_type_refiner.dataset` | Loads `training_pairs.jsonl`, builds padded teacher-forced batches |
 | `ts_type_refiner.validators` | 24 shape-regex validators, one per degradation rule, plus `VALIDATORS` dict |
-| `ts_type_refiner.train` | Orchestrator: tokenizer → dataset → model → `core.trainer.train` → checkpoint |
-| `ts_type_refiner.infer` | Orchestrator: load checkpoint → `core.predictor` → validate → write edits |
+| `ts_type_refiner.train` | Orchestrator: tokenizer → dataset → model → `ts_type_refiner.trainer.train` → checkpoint |
+| `ts_type_refiner.infer` | Orchestrator: load checkpoint → `ts_type_refiner.predictor` → validate → write edits |
 
 ---
 

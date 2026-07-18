@@ -122,6 +122,24 @@ def train(
     # multinomial sampling at eval time are also reproducible.
     torch.manual_seed(cfg.seed)
 
+    # Baseline intuition (plain gradient descent):
+    #   w = w - lr * dL/dw
+    # where:
+    #   - w      is a model weight
+    #   - lr     is learning rate
+    #   - dL/dw  is gradient of loss wrt that weight
+    #
+    # AdamW is a stronger variant applied to EVERY weight separately
+    # (per-parameter adaptive updates), not one shared scalar step.
+    # For each parameter w_i at step t:
+    #   m_t = beta1 * m_{t-1} + (1 - beta1) * g_t
+    #   v_t = beta2 * v_{t-1} + (1 - beta2) * (g_t^2)
+    #   m_hat = m_t / (1 - beta1^t)
+    #   v_hat = v_t / (1 - beta2^t)
+    #   w_i <- w_i - lr * m_hat / (sqrt(v_hat) + eps) - lr * weight_decay * w_i
+    #
+    # `optimizer` is still one global object over all model parameters.
+    # Internally it performs the per-parameter math for each w_i.
     optimizer = torch.optim.AdamW(
         model.parameters(),
         lr=cfg.lr,
@@ -129,6 +147,8 @@ def train(
     )
     loss_fn = nn.CrossEntropyLoss(ignore_index=pad_id)
 
+    # Scheduler controls the GLOBAL learning-rate trajectory over epochs.
+    # It does not replace optimizer math; it modulates lr used by optimizer.
     scheduler = None
     if cfg.lr_schedule == "cosine":
         scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
@@ -154,6 +174,24 @@ def train(
         for src, tgt_in, tgt_target in train_batches():
             optimizer.zero_grad()
 
+            # CORE OF TRAINING:
+            # One forward pass of the encoder-decoder transformer for the
+            # current mini-batch. The model consumes:
+            #   - src    : encoder token ids  (shape: [batch, src_len])
+            #   - tgt_in : decoder teacher-forcing input ids
+            #              (shape: [batch, tgt_len])
+            # and returns raw token scores (`logits`) for every decoder step.
+            #
+            # Typical logits tensor shape:
+            #   [batch, tgt_len, vocab_size]
+            # Example (batch=2, tgt_len=3, vocab_size=5):
+            #   logits[0, 0, :] = [ 1.20, -0.35,  0.10,  2.40, -1.10]
+            #   logits[0, 1, :] = [ 0.75,  0.05, -0.90,  1.10,  0.30]
+            #
+            # Interpretation:
+            #   At decoder position (0, 0), token-id=3 is currently most likely
+            #   because it has the highest logit (2.40). Softmax is applied later
+            #   inside cross-entropy to compare these scores with tgt_target.
             logits = model(src, tgt_in, verbose=False)
             # logits: (batch, tgt_len, vocab_size)
 
@@ -195,6 +233,9 @@ def train(
         tf_acc   = epoch_correct / epoch_total if epoch_total else 0.0
 
         if scheduler is not None:
+            # Update the scheduler once per epoch.
+            # - plateau: metric-reactive schedule (here: average train loss)
+            # - cosine:  time-based schedule (depends on epoch index)
             if cfg.lr_schedule == "plateau":
                 scheduler.step(avg_loss)
             else:

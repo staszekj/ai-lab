@@ -2,7 +2,7 @@
 Inference: predict precise types for refiner candidates.
 
 Reads candidates JSONL produced by `refiner-locate.ts`, runs the
-trained EncoderDecoderModel through `core.predictor.Predictor`,
+trained EncoderDecoderModel through `ts_type_refiner.predictor.Predictor`,
 validates each suggestion against the candidate's rule, and emits an
 edit JSONL ready for `refiner-apply.ts`.
 
@@ -75,8 +75,8 @@ from pathlib import Path
 
 import torch
 
-from core.checkpoint import build_model, load as load_checkpoint
-from core.predictor import Predictor
+from ts_type_refiner.checkpoint import build_model, load as load_checkpoint
+from ts_type_refiner.predictor import Predictor
 
 from ts_type_refiner.prompt import build_refine_prompt, PROMPT_VERSION
 from ts_type_refiner.tokenizer import TSTokenizer
@@ -372,7 +372,7 @@ def main() -> None:
 
     # ── Summary ───────────────────────────────────────────────────────
     print(f"\n{'='*60}")
-    print(f"SUMMARY")
+    print("SUMMARY")
     print(f"{'='*60}")
     print(f"  Candidates:           {len(candidates)}")
     print(f"  Unique candidate IDs: {len(best_by_id)}")

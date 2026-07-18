@@ -3,15 +3,15 @@ Encoder-Decoder Transformer Model (T5 / BART style)
 ====================================================================
 
 The canonical, production reference seq2seq Transformer for the
-`core` package. Domain-agnostic: knows nothing about TypeScript,
+`ts_type_refiner` package. Domain-agnostic: knows nothing about TypeScript,
 tokenizers, training loops, checkpoints or validators — it is a pure
 nn.Module that maps `(src_ids, tgt_in_ids) → logits` and supports
 autoregressive generation.
 
-Companion modules in `core`:
-    - core.trainer    : pure `train(model, batches, …)` function
-    - core.predictor  : `Predictor(model, encode, decode, …)` callable
-    - core.checkpoint : save / load / build_model helpers
+Companion modules in `ts_type_refiner`:
+    - ts_type_refiner.trainer    : pure `train(model, batches, …)` function
+    - ts_type_refiner.predictor  : `Predictor(model, encode, decode, …)` callable
+    - ts_type_refiner.checkpoint : save / load / build_model helpers
 
 Architecture (Pre-LN variant — used by GPT-2, T5, BART, modern LLMs):
 
@@ -59,11 +59,8 @@ Key shapes (always commented inline):
     logits         : (batch, tgt_len, vocab_size)
 
 This file is the production reference implementation — it is trained on real
-degraded-types corpora on CUDA. For a hand-walked tour with a hard-coded tiny
-example (`const enabled : string` → `"ON" | "OFF"`), tiny tensors and pretty
-matrix prints, run:
-
-    uv run --package core presentation-encoder-decoder
+degraded-types corpora on CUDA. It also includes a tiny hard-coded
+(`const enabled : string` → `"ON" | "OFF"`) walkthrough reference in comments.
 
 In-code comments below cross-reference the STEPs in that presentation script.
 """
@@ -640,7 +637,7 @@ class EncoderDecoderConfig:
 
     These six numbers fully determine `state_dict` shapes — they are
     the ONLY thing that needs to be persisted alongside the weights
-    for a checkpoint to be reloadable. See `core.checkpoint`.
+    for a checkpoint to be reloadable. See `ts_type_refiner.checkpoint`.
     """
 
     vocab_size: int = 1000
