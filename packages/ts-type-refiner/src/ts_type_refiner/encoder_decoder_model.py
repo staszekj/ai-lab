@@ -61,8 +61,6 @@ Key shapes (always commented inline):
 This file is the production reference implementation — it is trained on real
 degraded-types corpora on CUDA. It also includes a tiny hard-coded
 (`const enabled : string` → `"ON" | "OFF"`) walkthrough reference in comments.
-
-In-code comments below cross-reference the STEPs in that presentation script.
 """
 
 import math
@@ -84,9 +82,8 @@ import torch.nn as nn
 # ══════════════════════════════════════════════════════════════════════
 #
 # Inline comments throughout this file show concrete tensor shapes and
-# matrix examples using a tiny "micro-model" identical to the one in
-# presentation_encoder_decoder.py.  Every number in the comments can be
-# traced back to one of these names:
+# matrix examples using a tiny "micro-model" for reference. Every number in
+# the comments can be traced back to one of these names:
 #
 #   vocab_size  = 12   tokens: <pad> <bos> const let var enabled : string number ON | OFF
 #   d_model     =  6   embedding / hidden dimension (must equal num_heads × d_k)
@@ -100,14 +97,6 @@ import torch.nn as nn
 #   tgt_len     =  3   decoder-input tokens: "<bos>", "ON", "|"
 #                      (decoder target "ON | OFF" is tgt_len=3 shifted by 1)
 #
-# Example pair traced end-to-end:
-#   SOURCE  "const enabled : string"   src_ids = [[2, 5, 6, 7]]  shape (1, 4)
-#   TARGET  "ON | OFF"                 tgt_ids = [[9, 10, 11]]   shape (1, 3)
-#   decoder INPUT  (teacher-forced)  = [[1,  9, 10]]  ("<bos> ON |")
-#   decoder TARGET (what to predict) = [[9, 10, 11]]  ("ON | OFF")
-#
-# Production model (ts-type-refiner) uses much larger values, e.g.:
-#   vocab_size=2048, d_model=256, num_heads=8, d_k=32, d_ff=1024, num_layers=4
 # ══════════════════════════════════════════════════════════════════════
 
 
@@ -118,9 +107,6 @@ import torch.nn as nn
 class ManualTransformerEncoderBlock(nn.Module):
     """
     A single Pre-LN Transformer encoder block.
-
-    See: presentation_encoder_decoder.py — STEP 2
-          (bidirectional self-attention pattern, full attn-weight matrix)
 
     Sub-layers:
         1. Multi-head self-attention (no mask → bidirectional)
@@ -290,9 +276,6 @@ class ManualTransformerEncoderBlock(nn.Module):
 class ManualDecoderBlock(nn.Module):
     """
     A single Pre-LN Transformer Decoder Block with three sub-layers:
-
-    See: presentation_encoder_decoder.py — STEP 3
-          (causal mask diagram, cross-attention 3×4 weight matrix print)
 
         1. Masked Self-Attention   (Q,K,V from decoder; causal mask)
         2. Cross-Attention         (Q from decoder; K,V from encoder_output)
@@ -698,7 +681,6 @@ class EncoderDecoderModel(nn.Module):
         )
 
         # Shared embeddings (used by both encoder and decoder).
-        # → presentation STEP 1: vocab table + token_emb + pos_emb diagram.
         self.token_embedding      = nn.Embedding(vocab_size, d_model)
         self.positional_embedding = nn.Embedding(max_seq_len, d_model)
 
@@ -721,7 +703,6 @@ class EncoderDecoderModel(nn.Module):
         self.decoder_final_norm = nn.LayerNorm(d_model)
 
         # Language modelling head: project decoder output to vocab logits.
-        # → presentation STEP 4: (tgt_len, d_model) @ (d_model, vocab) projection.
         # [LoRA] Optional target: LM head projection.
         # [LoRA] Usually lower priority than cross-attention unless vocabulary
         # [LoRA] behavior itself must shift strongly.
@@ -729,7 +710,6 @@ class EncoderDecoderModel(nn.Module):
 
     # ------------------------------------------------------------------
     # Causal mask: upper-triangular -inf so position i attends only to 0..i.
-    # → presentation STEP 3: 3×3 causal mask visualization with -inf cells.
     # ------------------------------------------------------------------
     def _create_causal_mask(self, seq_len: int, device: torch.device) -> torch.Tensor:
         # Presentation example: tgt_seq=3, decoder input "<bos> ON |"
@@ -748,10 +728,88 @@ class EncoderDecoderModel(nn.Module):
             diagonal=1,
         )
 
-    # ------------------------------------------------------------------
-    # encode(): src_ids → encoder_output (used for training AND generation)
-    # → presentation STEP 1 (embeddings) + STEP 2 (encoder block forward).
-    # ------------------------------------------------------------------
+    # ═══════════════════════════════════════════════════════════════════════════════════════
+    # ENCODE: src_ids → encoder_output  (BIDIRECTIONAL SELF-ATTENTION - THE MEMORY BUILDER)
+    # ═══════════════════════════════════════════════════════════════════════════════════════
+    #
+    # THE ENCODER'S JOB:
+    #   Read the entire source sequence ONCE and compress it into a single "memory" tensor.
+    #   This memory will be used by the decoder to understand what type we need.
+    #
+    # REAL EXAMPLE (from encoder_decoder_pairs.jsonl, row A):
+    #   SOURCE:  "const observedElements: Map<unknown, unknown> = new Map();"
+    #   STEP 1: Tokenize → [[const, observedElements, :, Map, <, unknown, >, ...]]
+    #   STEP 2: Run through encoder with bidirectional self-attention (ALL see ALL)
+    #   STEP 3: Output encoder_output = (batch=1, src_len=~12, d_model=256)
+    #           Every source token now has rich context representation.
+    #
+    # THE CORE MECHANISM: MULTI-HEAD SELF-ATTENTION (NO mask = bidirectional)
+    # ┌─────────────────────────────────────────────────────────────────────────┐
+    # │ INPUT: x = (batch=1, src_len=4, d_model=6)  e.g. "const enabled : string"
+    # │                                                                           │
+    # │ STEP 1: Project x onto Q, K, V via linear layers                         │
+    # │   Q = W_Q(x) → (1, 4, 6)  "What am I looking for?"                      │
+    # │   K = W_K(x) → (1, 4, 6)  "What do I have?"                             │
+    # │   V = W_V(x) → (1, 4, 6)  "Here's the content"                          │
+    # │                                                                           │
+    # │ STEP 2: Split into num_heads=3, each with d_k=2                          │
+    # │   (1, 4, 6) → reshape → (1, 4, 3, 2) → transpose → (1, 3, 4, 2)         │
+    # │   [batch, seq, heads, d_k] → [batch, heads, seq, d_k]                   │
+    # │                                                                           │
+    # │ STEP 3: Compute attention scores: Q @ K^T / sqrt(d_k)                   │
+    # │   scores = (1, 3, 4, 2) @ (1, 3, 2, 4) / sqrt(2) → (1, 3, 4, 4)          │
+    # │            Q           K^T                        SQUARE MATRIX          │
+    # │                                                                           │
+    # │   scores[h, i, j] = attention strength: does token i want to look at j? │
+    # │                                                                           │
+    # │ STEP 4: Softmax on last dimension (over source positions)               │
+    # │   weights = softmax(scores, dim=-1) → (1, 3, 4, 4)                       │
+    # │   weights[h, i, :] = probability distribution over 4 source tokens      │
+    # │   Example: [0.4, 0.1, 0.05, 0.45] - token i's attention to all src     │
+    # │                                                                           │
+    # │ STEP 5: Weighted sum of values: context = weights @ V                   │
+    # │   (1, 3, 4, 4) @ (1, 3, 4, 2) → (1, 3, 4, 2)                             │
+    # │    weights      V              head_output                               │
+    # │                                                                           │
+    # │   Each token i blends vectors of ALL tokens j, weighted by attention     │
+    # │   Token "const" gets strongest signal from "const" itself and "string"  │
+    # │                                                                           │
+    # │ STEP 6: Concat multi-head outputs + project via W_O                      │
+    # │   (1, 3, 4, 2) → concat → (1, 4, 6) → W_O → (1, 4, 6)                    │
+    # │   All 3 heads recombined into single d_model dimension                   │
+    # │                                                                           │
+    # │ STEP 7: Residual connection + LayerNorm + FFN + Residual + LayerNorm   │
+    # │   output = x + Attention(LayerNorm(x))                                   │
+    # │   output = output + FFN(LayerNorm(output))                               │
+    # │   (1, 4, 6) ready for next encoder block                                 │
+    # │                                                                           │
+    # │ REPEAT: Stack N encoder blocks (N=4 typically) — each refines context   │
+    # │         by doing another round of multi-head self-attention             │
+    # │                                                                           │
+    # │ FINAL: encoder_output = (batch, src_len, d_model)  ← THE MEMORY          │
+    # │        Every source token now encodes "what was in the code"            │
+    # │        This tensor becomes K,V for decoder cross-attention              │
+    # └─────────────────────────────────────────────────────────────────────────┘
+    #
+    # KEY PROPERTY: BIDIRECTIONAL
+    #   • Token i attends to ALL tokens (0..n-1), no causal mask.
+    #   • Unlike decoder, encoder is free to look left AND right.
+    #   • Each token receives a compressed view of the ENTIRE source sequence.
+    #
+    # INTUITION - What encoder learns:
+    #   - Token "const" learns: "I start a variable declaration with type string"
+    #   - Token "enabled" learns: "I am a variable name, with type annotation"
+    #   - Token ":" learns: "I separate identifier from type annotation"
+    #   - Token "string" learns: "I specify the type of variable 'enabled'"
+    #   - Together: "const enabled : string" = a string-typed variable declaration
+    #
+    # FOR ROW A REAL EXAMPLE:
+    #   SOURCE: "const observedElements: Map<unknown, unknown> = new Map();"
+    #   - Token "Map" cluster: learns it's a generic container type
+    #   - Token "<unknown>" cluster: learns it's a type parameter
+    #   - Together encoder_output captures: "Map holds unknown keys and unknown values"
+    #   - Decoder will read this memory and predict better type: "Map<Measurable, Data>"
+    #
     def encode(self, src_ids: torch.Tensor, verbose: bool = True) -> torch.Tensor:
         """
         Parameters
@@ -760,29 +818,7 @@ class EncoderDecoderModel(nn.Module):
 
         Returns
         -------
-        (batch, src_len, d_model)
-
-        Presentation example  src = "const enabled : string"  (vocab=12, d_model=6):
-
-            src_ids = [[2, 5, 6, 7]]                        shape (1, 4)
-                           │
-            token_embedding picks rows 2,5,6,7
-            from the shared (vocab × d_model) = (12 × 6) table     → (1, 4, 6)
-
-            pos_ids = [0, 1, 2, 3]
-            positional_embedding picks rows 0-3
-            from the (max_seq × d_model) = (16 × 6) table          → (4, 6)
-
-            enc_x = token_emb + pos_emb  [broadcast over batch]    → (1, 4, 6)
-                ┌──────────────────────────────────────────────────┐
-                │ row 0: embedding("const")  + pos(0)  = vec_const │
-                │ row 1: embedding("enabled")+ pos(1)  = vec_enab  │
-                │ row 2: embedding(":")      + pos(2)  = vec_colon │
-                │ row 3: embedding("string") + pos(3)  = vec_str   │
-                └──────────────────────────────────────────────────┘
-
-            → 2 × EncoderBlock (bidirectional self-attn, NO mask)   (1, 4, 6)
-            → encoder_final_norm                                     (1, 4, 6)
+        (batch, src_len, d_model) — encoder output, the "memory" of source
         """
         batch_size, src_len = src_ids.shape
         assert src_len <= self.max_seq_len
@@ -811,10 +847,185 @@ class EncoderDecoderModel(nn.Module):
         # unchanged as K and V to every cross-attention layer of every decoder block.
         return encoder_output
 
-    # ------------------------------------------------------------------
-    # decode(): tgt_ids + encoder_output → logits
-    # → presentation STEP 3 (decoder block forward) + STEP 4 (LM head).
-    # ------------------------------------------------------------------
+    # ═══════════════════════════════════════════════════════════════════════════════════════
+    # DECODE: tgt_ids + encoder_output → logits  (MASKED SELF-ATTN + CROSS-ATTENTION)
+    # ═══════════════════════════════════════════════════════════════════════════════════════
+    #
+    # THE DECODER'S JOB:
+    #   Generate a type annotation token-by-token, using TWO attention mechanisms:
+    #     1. MASKED SELF-ATTENTION: what have I already generated? (no peeking ahead)
+    #     2. CROSS-ATTENTION: what can encoder memory tell me? (peek at source)
+    #
+    # REAL EXAMPLE (from encoder_decoder_pairs.jsonl, row A):
+    #   encoder_output: (1, ~12, 256) from "const observedElements: Map<unknown, ...>"
+    #   target (to generate): "Map<Measurable, ObservedData>"
+    #   During training: decoder gets teacher-forced target tokens one by one
+    #   Output: logits (1, tgt_len, 2048) - probability of each vocab token
+    #
+    # ┌─────────────────────────────────────────────────────────────────────────────────┐
+    # │ MECHANISM 1: MASKED SELF-ATTENTION  (causality: token i sees only tokens 0..i)  │
+    # │                                                                                   │
+    # │ Purpose: Prevent decoder from cheating by looking at future target tokens       │
+    # │          Ensures generation is truly left-to-right (autoregressive)             │
+    # │                                                                                   │
+    # │ Example: Generating target "Map<Measurable, ObservedData>"                      │
+    # │   When predicting token 2 ("<"), decoder has already generated: ["Map", "<"]    │
+    # │   Masked self-attention: token "<" attends ONLY to ["Map", "<"]                 │
+    # │   Cannot peek at future "Measurable", ",", "ObservedData" (not yet generated)   │
+    # │                                                                                   │
+    # │ CAUSAL MASK PATTERN (tgt_len=5):                                                │
+    # │   Position:  0   1   2   3   4                                                   │
+    # │          0  [✓   ✗   ✗   ✗   ✗]   ← token 0 sees only position 0               │
+    # │          1  [✓   ✓   ✗   ✗   ✗]   ← token 1 sees positions 0,1                 │
+    # │          2  [✓   ✓   ✓   ✗   ✗]   ← token 2 sees positions 0,1,2               │
+    # │          3  [✓   ✓   ✓   ✓   ✗]   ← token 3 sees positions 0,1,2,3             │
+    # │          4  [✓   ✓   ✓   ✓   ✓]   ← token 4 sees all positions 0-4             │
+    # │                                                                                   │
+    # │   Implementation: scores + (-inf at ✗) → softmax → [?, ?, ..., 0, 0, ...]       │
+    # │   Masked positions become softmax = 0 attention (all weight on unmasked)        │
+    # │                                                                                   │
+    # │ MATH (Q×K^T → softmax → V pattern, all from decoder):                          │
+    # │   Q = W_Q(decoder_hidden) → (batch, tgt_len, d_model)                           │
+    # │   K = W_K(decoder_hidden) → (batch, tgt_len, d_model)                           │
+    # │   V = W_V(decoder_hidden) → (batch, tgt_len, d_model)                           │
+    # │                                                                                   │
+    # │   scores = Q @ K^T / sqrt(d_k) → (batch, num_heads, tgt_len, tgt_len)           │
+    # │            Q        K^T                        SQUARE MATRIX                     │
+    # │                                                                                   │
+    # │   scores = scores + causal_mask (mask is 0 or -inf)                             │
+    # │   weights = softmax(scores, dim=-1)  → -inf positions collapse to 0             │
+    # │   output = weights @ V                                                           │
+    # │                                                                                   │
+    # │ INTUITION:                                                                       │
+    # │   Forces decoder to generate left-to-right without "cheating"                   │
+    # │   Each token learns from history ("what have I seen so far?")                   │
+    # │   But cannot learn from future ("what's coming next?")                          │
+    # └─────────────────────────────────────────────────────────────────────────────────┘
+    #
+    # ┌─────────────────────────────────────────────────────────────────────────────────┐
+    # │ MECHANISM 2: CROSS-ATTENTION  (Q from decoder, K/V from encoder_output)         │
+    # │                                                                                   │
+    # │ Purpose: Allow decoder to query encoder memory                                   │
+    # │          Decoder asks "What type information is in the source code?"            │
+    # │          Encoder memory answers with relevant features                           │
+    # │                                                                                   │
+    # │ Example: Generating "Map<Measurable, ...>"                                      │
+    # │   Decoder token "Map" asks encoder: "What container info do you have?"          │
+    # │   Encoder peaks on its "Map" token: "The source has a Map container!"           │
+    # │   Result: Decoder learns to output "Map" (matching encoder's observation)       │
+    # │                                                                                   │
+    # │   Decoder token "Measurable" asks: "What should go inside this container?"      │
+    # │   Encoder peaks on "<unknown>": "I saw 'unknown' type in source"                │
+    # │   Result: Decoder predicts concrete type to replace 'unknown'                   │
+    # │                                                                                   │
+    # │ SHAPES (with src_len=12, tgt_len=5, d_model=256, num_heads=8, d_k=32):          │
+    # │   encoder_output: (batch=1, src_len=12, d_model=256) ← "the memory"             │
+    # │   decoder hidden: (batch=1, tgt_len=5, d_model=256)  ← "the generator"          │
+    # │                                                                                   │
+    # │   Q = W_Q(decoder_hidden) → (1, 5, 256)   ← what decoder needs                  │
+    # │   K = W_K(encoder_output) → (1, 12, 256)  ← what encoder offers                 │
+    # │   V = W_V(encoder_output) → (1, 12, 256)  ← actual content from encoder         │
+    # │                                                                                   │
+    # │ ATTENTION COMPUTATION (split into heads):                                        │
+    # │   Q: (1, 5, 256) → reshape → (1, 8, 5, 32)   [batch, heads, tgt_seq, d_k]       │
+    # │   K: (1, 12, 256) → reshape → (1, 8, 12, 32) [batch, heads, src_seq, d_k]       │
+    # │   V: (1, 12, 256) → reshape → (1, 8, 12, 32) [batch, heads, src_seq, d_k]       │
+    # │                                                                                   │
+    # │   scores = Q @ K^T / sqrt(32)                                                    │
+    # │           (1,8,5,32) @ (1,8,32,12) → (1, 8, 5, 12)  ← RECTANGULAR!             │
+    # │           ^5 decoder    ^12 source       5×12 scores                             │
+    # │                                                                                   │
+    # │   This is DIFFERENT from self-attention (which is square).                      │
+    # │   Here: 5 decoder positions, each attends to 12 source positions.               │
+    # │                                                                                   │
+    # │   weights = softmax(scores, dim=-1) → (1, 8, 5, 12)                              │
+    # │   Each decoder position has a probability distribution over ALL source positions│
+    # │                                                                                   │
+    # │   Example (head 0, decoder position 0 - predicting "Map"):                       │
+    # │   weights[0, 0, 0, :] = [0.01, 0.02, 0.15, 0.05, 0.35, 0.12, 0.08, ...]        │
+    # │                           ↑ const ↑ enable ↑ Map  ↑ unknown ↑ <      ...        │
+    # │   Decoder peaks on encoder position 4 ("Map") - attention = 0.35                 │
+    # │   (Reasonable: encoder has a "Map" token, decoder should probably output "Map")  │
+    # │                                                                                   │
+    # │   context = weights @ V                                                          │
+    # │            (1,8,5,12) @ (1,8,12,32) → (1, 8, 5, 32)                              │
+    # │   Each decoder position blends all 12 encoder value vectors,                     │
+    # │   weighted by attention. Result: rich context vector for each decoder position. │
+    # │                                                                                   │
+    # │   concat + W_O: (1, 8, 5, 32) → concat → (1, 5, 256)                             │
+    # │   Multi-head outputs recombined back to d_model.                                │
+    # │                                                                                   │
+    # │ INTUITION:                                                                       │
+    # │   Decoder grounding: predictions are rooted in what encoder observed.           │
+    # │   Enables "copying" from source: if "Map<unknown>" in source,                   │
+    # │   decoder learns to output something like "Map<Concrete>"                        │
+    # │   Cross-attention is the BRIDGE between encoder memory and decoder generation   │
+    # │                                                                                   │
+    # │ FOR ROW A:                                                                       │
+    # │   Source: "const observedElements: Map<unknown, unknown> = new Map();"           │
+    # │   Target: "Map<Measurable, ObservedData>"                                        │
+    # │                                                                                   │
+    # │   Decoder "Map" → cross-attention peaks on encoder "Map" → outputs "Map"        │
+    # │   Decoder "<" → cross-attention peaks on encoder "<" → outputs "<"               │
+    # │   Decoder "Measurable" → cross-attention peaks on "unknown" → learns to         │
+    # │     replace "unknown" with a concrete type like "Measurable"                    │
+    # │   Decoder ",ObservedData" → similar pattern, learns second type parameter       │
+    # └─────────────────────────────────────────────────────────────────────────────────┘
+    #
+    # DECODER BLOCK ARCHITECTURE (Pre-LN with 3 sub-layers):
+    # ┌─────────────────────────────────────────────────────────────────────────────────┐
+    # │ Input: x = (batch, tgt_len, d_model)                                             │
+    # │                                                                                   │
+    # │ SUB-LAYER 1: Masked Self-Attention                                              │
+    # │   x_norm = LayerNorm(x)                                                          │
+    # │   attn = MultiHeadAttention(                                                     │
+    # │     Q, K, V all from x_norm,                                                    │
+    # │     attn_mask = causal_mask  ← key: forces causality                            │
+    # │   )                                                                              │
+    # │   x = x + attn  ← residual                                                       │
+    # │                                                                                   │
+    # │ SUB-LAYER 2: Cross-Attention to Encoder                                         │
+    # │   x_norm = LayerNorm(x)                                                          │
+    # │   attn = MultiHeadAttention(                                                     │
+    # │     Q = x_norm (from decoder),                                                  │
+    # │     K, V = encoder_output (from encoder),  ← KEY: different sources!            │
+    # │     attn_mask = None  ← no mask, decoder can attend to all source positions    │
+    # │   )                                                                              │
+    # │   x = x + attn  ← residual                                                       │
+    # │                                                                                   │
+    # │ SUB-LAYER 3: Feed-Forward Network                                               │
+    # │   x_norm = LayerNorm(x)                                                          │
+    # │   ffn = Linear(d_ff)(GELU(Linear(d_model)(x_norm)))                              │
+    # │   x = x + ffn  ← residual                                                        │
+    # │                                                                                   │
+    # │ Output: x = (batch, tgt_len, d_model)  ← ready for next decoder block or head   │
+    # └─────────────────────────────────────────────────────────────────────────────────┘
+    #
+    # FULL DECODER FORWARD PASS:
+    #   1. Embed target tokens + position information
+    #      →  (batch, tgt_len, d_model)
+    #
+    #   2. Run through N decoder blocks (N=4 typically)
+    #      Each block: masked self-attention + cross-attention + FFN
+    #      →  (batch, tgt_len, d_model) after each block
+    #
+    #   3. Apply final LayerNorm
+    #      →  (batch, tgt_len, d_model)
+    #
+    #   4. Project via LM head (d_model → vocab_size)
+    #      →  logits (batch, tgt_len, vocab_size=2048)
+    #         One probability distribution per target position
+    #
+    #   5. Return logits to be compared with ground-truth targets via cross-entropy loss
+    #
+    # KEY INSIGHT:
+    #   Without cross-attention, decoder would generate randomly, ignoring source.
+    #   WITH cross-attention, decoder learns to ground type predictions in source code.
+    #   Example: Seeing "Map<unknown>" in source makes decoder predict "Map<Specific>"
+    #   Example: Seeing "ObservedData" in source makes decoder predict similar types
+    #
+    # CROSS-ATTENTION IS THE GLUE that makes encoder-decoder work as a unified system!
+    #
     def decode(
         self,
         tgt_ids: torch.Tensor,
@@ -830,29 +1041,6 @@ class EncoderDecoderModel(nn.Module):
         Returns
         -------
         logits : (batch, tgt_len, vocab_size)
-
-        Presentation example  tgt_input = "<bos> ON |"  (vocab=12, d_model=6):
-
-            tgt_ids = [[1, 9, 10]]                          shape (1, 3)
-                │
-            token_embedding picks rows 1,9,10 from (12×6)        → (1, 3, 6)
-            pos_emb picks rows 0,1,2 from (16×6)                  → (3, 6)
-            dec_x = token_emb + pos_emb                           → (1, 3, 6)
-                ┌────────────────────────────────────────────┐
-                │ row 0: emb("<bos>") + pos(0) = vec_bos     │
-                │ row 1: emb("ON")    + pos(1) = vec_on      │
-                │ row 2: emb("|")     + pos(2) = vec_pipe    │
-                └────────────────────────────────────────────┘
-
-            tgt_mask: (3, 3)  causal — see _create_causal_mask
-
-            → 2 × DecoderBlock (masked self-attn + cross-attn + FFN)  (1, 3, 6)
-            → decoder_final_norm                                        (1, 3, 6)
-            → lm_head  (d_model → vocab_size = 6 → 12)                 (1, 3, 12)
-
-            logits[0, 0, :] = 12 scores for predicting after "<bos>"  → target "ON"
-            logits[0, 1, :] = 12 scores for predicting after "ON"     → target "|"
-            logits[0, 2, :] = 12 scores for predicting after "|"      → target "OFF"
         """
         _, tgt_len = tgt_ids.shape
         assert tgt_len <= self.max_seq_len
@@ -884,22 +1072,263 @@ class EncoderDecoderModel(nn.Module):
         logits = self.lm_head(x)            # (batch, tgt_len, vocab_size)  e.g. (1, 3, 12)
         return logits
 
-    # ------------------------------------------------------------------
-    # forward() — full pass for training (teacher forcing).
-    # ------------------------------------------------------------------
+    # ═══════════════════════════════════════════════════════════════════════════════════════
+    # FORWARD: src_ids + tgt_ids → logits  (TRAINING-TIME: encoder-decoder with teacher forcing)
+    # ═══════════════════════════════════════════════════════════════════════════════════════
+    #
+    # THE FORWARD PASS is the complete training pipeline:
+    #   1. Encode source to memory (bidirectional self-attention)
+    #   2. Decode using memory + teacher-forced target (masked self-attention + cross-attention)
+    #   3. Return logits to be compared with ground truth via loss function
+    #
+    # REAL EXAMPLE (from encoder_decoder_pairs.jsonl, row A):
+    # ┌─────────────────────────────────────────────────────────────────────────────────┐
+    # │ TRAINING BATCH:                                                                  │
+    # │                                                                                   │
+    # │ source_code = "const observedElements: Map<unknown, unknown> = new Map();"       │
+    # │ target_type = "Map<Measurable, ObservedData>"                                    │
+    # │                                                                                   │
+    # │ TOKENIZATION:                                                                    │
+    # │ src_ids = [[const, observedElements, :, Map, <, unknown, >, comma, ...]]        │
+    # │           Tokenized indices (batch=1, src_len≈12)                                │
+    # │                                                                                   │
+    # │ tgt_ids = [[Map, <, Measurable, comma, ObservedData, >]]                         │
+    # │           Ground-truth type tokens (batch=1, tgt_len≈6)                          │
+    # │                                                                                   │
+    # │ TEACHER FORCING:                                                                 │
+    # │ Decoder receives shifted target (prepend <BOS>, remove last token):              │
+    # │ decoder_input_ids = [[<BOS>, Map, <, Measurable, comma, ObservedData]]          │
+    # │ decoder_target_ids = [[Map, <, Measurable, comma, ObservedData, >]]             │
+    # │                                                                                   │
+    # │ TRAINING STEP (this forward() call):                                             │
+    # │ logits = model.forward(src_ids, tgt_ids)                                         │
+    # │ logits.shape = (batch=1, tgt_len=6, vocab_size=2048)                             │
+    # │ loss = cross_entropy(logits, tgt_ids)  ← only on real tokens, not padding       │
+    # │ loss.backward() → update model weights                                           │
+    # └─────────────────────────────────────────────────────────────────────────────────┘
+    #
+    # WHAT IS TEACHER FORCING?
+    # ┌─────────────────────────────────────────────────────────────────────────────────┐
+    # │ DURING TRAINING: Decoder receives TRUE target tokens from the batch             │
+    # │ (not its own predictions - which might be wrong early in training).             │
+    # │                                                                                   │
+    # │ EXAMPLE - Generating "Map<Measurable, ObservedData>" during training:            │
+    # │                                                                                   │
+    # │ AUTOREGRESSIVE (inference, generate() method):                                   │
+    # │   Step 0: Model predicts P(token | <BOS>) → sample "Map"                         │
+    # │   Step 1: Model predicts P(token | <BOS>, "Map") → sample "<"                    │
+    # │   Step 2: Model predicts P(token | <BOS>, "Map", "<") → sample "Measurable"     │
+    # │   ... (each step uses model's own previous prediction)                           │
+    # │                                                                                   │
+    # │ TEACHER FORCING (training, this forward() method):                               │
+    # │   Step 0: Model sees input "<BOS>", must predict "Map"                           │
+    # │   Step 1: Model sees input "<BOS>, Map", must predict "<"                        │
+    # │   Step 2: Model sees input "<BOS>, Map, <", must predict "Measurable"           │
+    # │   ... (each step uses GROUND TRUTH previous token, not model's guess)            │
+    # │                                                                                   │
+    # │ WHY TEACHER FORCING?                                                              │
+    # │   • Provides strong supervision signal (model always sees correct input)         │
+    # │   • Speeds up training (no compounding errors in early training)                 │
+    # │   • Makes loss more stable and meaningful                                        │
+    # │   • Model doesn't waste time "recovering" from its own early mistakes           │
+    # │                                                                                   │
+    # │ TRADE-OFF (distribution mismatch):                                               │
+    # │   • During training: decoder sees perfect input from batch                       │
+    # │   • During inference: decoder sees its own (imperfect) predictions               │
+    # │   • Solution: some training recipes do "scheduled sampling" (blend the two)     │
+    # │     But standard transformers just use teacher forcing (works well enough)      │
+    # └─────────────────────────────────────────────────────────────────────────────────┘
+    #
+    # ATTENTION FLOW IN FORWARD PASS
+    # ┌─────────────────────────────────────────────────────────────────────────────────┐
+    # │ PHASE 1: ENCODING (bidirectional self-attention, full source context)            │
+    # │                                                                                   │
+    # │ Source: "const observedElements: Map<unknown, unknown> = new Map();"             │
+    # │                                                                                   │
+    # │ ENCODER BLOCK 1:                                                                 │
+    # │   "const" ↔ attends to all: "observedElements", ":", "Map", "<unknown>", ...    │
+    # │   "observedElements" ↔ attends to all: "const", ":", "Map", "<unknown>", ...    │
+    # │   "Map" ↔ attends to all: learns it's used in type position                     │
+    # │   "<unknown>" ↔ attends to all: appears after "Map<"                             │
+    # │   ... (each token attends to EVERY other token)                                  │
+    # │                                                                                   │
+    # │ ENCODER BLOCK 2 (refines layer 1 representations):                               │
+    # │   Same bidirectional pattern, but working with richer layer-1 embeddings         │
+    # │   Result: encoder_output = (1, src_len, 256) ← rich contextual memory            │
+    # │                                                                                   │
+    # │ KEY INSIGHT: BIDIRECTIONAL ENCODING                                              │
+    # │   • Every source token sees the full picture                                     │
+    # │   • "Map" learns about types because it sees "const ... : Map<..."               │
+    # │   • "<unknown>" learns it's a type parameter                                     │
+    # │   • Final encoder_output is a compressed representation of "what's in the code" │
+    # │                                                                                   │
+    # │ PHASE 2: DECODING (masked self-attention + cross-attention to encoder)           │
+    # │                                                                                   │
+    # │ Target (teacher-forced): "<BOS>, Map, <, Measurable, comma, ObservedData"       │
+    # │ decoder_output goal: predict "Map, <, Measurable, comma, ObservedData, >"       │
+    # │                                                                                   │
+    # │ DECODER BLOCK 1:                                                                 │
+    # │                                                                                   │
+    # │   SUB-LAYER 1A: Masked Self-Attention                                            │
+    # │   Position 0 (token "<BOS>"):                                                    │
+    # │     Masked self-attention: attends only to position 0 (itself)                   │
+    # │     Learns context from just "<BOS>" (start-of-sequence signal)                  │
+    # │                                                                                   │
+    # │   Position 1 (token "Map"):                                                      │
+    # │     Masked self-attention: attends to positions 0,1 ("<BOS>", "Map")             │
+    # │     Learns "I come after start-of-sequence"                                      │
+    # │     (Cannot peek at future "< Measurable ..." - they're masked)                  │
+    # │                                                                                   │
+    # │   Position 2 (token "<"):                                                        │
+    # │     Masked self-attention: attends to positions 0,1,2 ("<BOS>", "Map", "<")      │
+    # │     Learns "I come after Map in the type annotation"                             │
+    # │                                                                                   │
+    # │   SUB-LAYER 1B: Cross-Attention (Q from decoder, K,V from encoder)               │
+    # │                                                                                   │
+    # │   Position 0 (token "<BOS>"):                                                    │
+    # │     Q (query): "What type info do I need?" - from "<BOS>" representation         │
+    # │     Queries ENTIRE encoder memory:                                               │
+    # │       encoder has: "const", "observedElements", ":", "Map", "<unknown>", ...    │
+    # │     Attention peaks on "Map" (highest cross-attention weight)                    │
+    # │     Learns: "The source has a Map type container"                                │
+    # │                                                                                   │
+    # │   Position 1 (token "Map"):                                                      │
+    # │     Q (query): Stronger signal "I need type container information"               │
+    # │     Queries encoder memory: peaks even more on encoder "Map"                     │
+    # │     Cross-attention learns: "Output 'Map' because source has 'Map'"              │
+    # │                                                                                   │
+    # │   Position 2 (token "<"):                                                        │
+    # │     Q (query): "What comes inside the container?"                                │
+    # │     Queries encoder memory: peaks on "<unknown>"                                 │
+    # │     Learns: "Source has type parameters, I should output '<'"                    │
+    # │                                                                                   │
+    # │   Position 3 (token "Measurable"):                                               │
+    # │     Q (query): "What specific type should replace unknown?"                      │
+    # │     Queries encoder memory: "<unknown>" token is strong signal                   │
+    # │     Learns: "Source has unknown, I should output something more concrete"        │
+    # │                                                                                   │
+    # │   SUB-LAYER 1C: Feed-Forward                                                     │
+    # │     FFN: Per-token transformation (d_model → d_ff → d_model)                     │
+    # │     No cross-sequence interaction, just enriches each token's representation     │
+    # │                                                                                   │
+    # │ DECODER BLOCK 2 (refines layer 1):                                               │
+    # │   Same 3-layer structure, working with richer layer-1 representations            │
+    # │   Result: decoder output = (1, tgt_len, 256) ← refined predictions              │
+    # │                                                                                   │
+    # │ LOGITS HEAD:                                                                     │
+    # │   Linear projection: (d_model=256) → (vocab_size=2048)                           │
+    # │   logits = (1, tgt_len=6, vocab_size=2048)                                       │
+    # │   logits[b, t, v] = raw score for token v at position t in batch b               │
+    # │                                                                                   │
+    # │ LOSS COMPUTATION:                                                                │
+    # │   loss = cross_entropy(logits, tgt_ids, ignore_index=PAD_ID)                     │
+    # │                                                                                   │
+    # │   Example at position 1:                                                         │
+    # │     Model outputs logits for vocab (2048 values)                                 │
+    # │     Ground truth: tgt_ids[1] = MAP_TOKEN_ID                                      │
+    # │     Loss includes: -log(softmax(logits[MAP_TOKEN_ID]))                           │
+    # │     If logits[MAP_TOKEN_ID] is high: low loss (good!)                            │
+    # │     If logits[MAP_TOKEN_ID] is low: high loss (bad, gradient flows back)        │
+    # │                                                                                   │
+    # │ GRADIENT FLOW:                                                                   │
+    # │   loss.backward() → gradients flow back through:                                 │
+    # │     logits → lm_head → decoder blocks → encoder blocks → embeddings              │
+    # │   Every parameter adjusted to make loss smaller next step                        │
+    # └─────────────────────────────────────────────────────────────────────────────────┘
+    #
+    # COMPLETE FORWARD PASS DIAGRAM
+    # ┌─────────────────────────────────────────────────────────────────────────────────┐
+    # │                                                                                   │
+    # │ INPUTS:                                                                          │
+    # │   src_ids: (1, src_len≈12)  - tokenized source code                              │
+    # │   tgt_ids: (1, tgt_len≈6)   - tokenized target type (ground truth)               │
+    # │                                                                                   │
+    # │                              ↓                                                    │
+    # │                                                                                   │
+    # │ STEP 1 - ENCODE (this function calls self.encode):                               │
+    # │   ┌─────────────────────────────────────────────────────────────┐                │
+    # │   │ Embed: (1, 12) → (1, 12, 256)                               │                │
+    # │   │ Encoder Block 1: bidirectional self-attention               │                │
+    # │   │ Encoder Block 2: bidirectional self-attention               │                │
+    # │   │ Output: encoder_output (1, 12, 256) ← THE MEMORY             │                │
+    # │   └─────────────────────────────────────────────────────────────┘                │
+    # │                              ↓                                                    │
+    # │                                                                                   │
+    # │ STEP 2 - DECODE (this function calls self.decode):                               │
+    # │   ┌─────────────────────────────────────────────────────────────┐                │
+    # │   │ Embed: (1, 6) → (1, 6, 256)                                 │                │
+    # │   │ Decoder Block 1:                                             │                │
+    # │   │   Sub-1a: Masked self-attention (causality)                 │                │
+    # │   │   Sub-1b: Cross-attention (Q from decoder, K,V from encoder) │                │
+    # │   │   Sub-1c: Feed-forward                                       │                │
+    # │   │ Decoder Block 2: (same 3 sub-layers)                         │                │
+    # │   │ Output: decoder_out (1, 6, 256)                              │                │
+    # │   │ LM Head: (1, 6, 256) → (1, 6, 2048)                          │                │
+    # │   └─────────────────────────────────────────────────────────────┘                │
+    # │                              ↓                                                    │
+    # │                                                                                   │
+    # │ OUTPUTS:                                                                         │
+    # │   logits: (1, 6, 2048) - probability of each vocab token                         │
+    # │                                                                                   │
+    # │   During training:                                                               │
+    # │     loss = cross_entropy(logits, tgt_ids)                                        │
+    # │     loss.backward()                                                              │
+    # │     optimizer.step()                                                             │
+    # │                                                                                   │
+    # │   During inference:                                                              │
+    # │     Use generate() instead (autoregressive token-by-token)                       │
+    # │                                                                                   │
+    # └─────────────────────────────────────────────────────────────────────────────────┘
+    #
+    # KEY LEARNING OBJECTIVES IN THIS FORWARD PASS:
+    #
+    # Encoder learns (through gradients from loss):
+    #   • "How to compress source code into semantically meaningful representations"
+    #   • "What patterns in source code matter for type inference"
+    #   • "How to highlight relevant tokens (e.g., Map, <unknown>)"
+    #
+    # Decoder learns (through gradients from loss):
+    #   • "How to generate type annotations that match source code patterns"
+    #   • "When to reuse tokens from source (Map) vs. generate new ones (Measurable)"
+    #   • "How to use encoder memory to ground predictions"
+    #
+    # Cross-attention specifically learns:
+    #   • "Which encoder tokens are relevant to each decoder position"
+    #   • "How to blend information from multiple source tokens"
+    #   • "How to 'copy' concepts from source (Map→Map) vs. 'refine' them (unknown→Measurable)"
+    #
+    # THE MAGIC OF ATTENTION:
+    #   All learning happens through weighted combinations (attention) and gradients.
+    #   No explicit "copy" or "generate" rules - the model learns implicitly.
+    #   This is why attention is the CORE of modern transformers.
+    #
     def forward(
         self,
         src_ids: torch.Tensor,
         tgt_ids: torch.Tensor,
         verbose: bool = True,
     ) -> torch.Tensor:
+        """
+        Parameters
+        ----------
+        src_ids : (batch, src_len)
+            Source side: TypeScript code with degraded type annotation.
+        tgt_ids : (batch, tgt_len)
+            Target side: precise type we want decoder to output (teacher forcing).
+        verbose : bool
+            If True, print per-block shapes and intermediate tensor stats.
+
+        Returns
+        -------
+        logits : (batch, tgt_len, vocab_size)
+            Raw model output — one logits vector per position.
+        """
         encoder_output = self.encode(src_ids, verbose=verbose)
         logits         = self.decode(tgt_ids, encoder_output, verbose=verbose)
         return logits
 
     # ------------------------------------------------------------------
     # generate() — autoregressive inference. Encoder runs ONCE.
-    # → presentation STEP 8: step-by-step decode of "ON | OFF".
     # ------------------------------------------------------------------
     @torch.no_grad()
     def generate(
