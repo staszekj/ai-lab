@@ -28,17 +28,6 @@ cp packages/ts-type-refiner/pyproject-cpu.toml packages/ts-type-refiner/pyprojec
 uv lock
 ```
 
-### Lock Files
-
-- **`uv-cuda.lock`** — committed, from GPU machine. Use with CUDA config.
-- **`uv.lock`** — **local only**, generated per-platform by `uv lock`
-- **`uv-cpu.lock`** — **local only**, alternative CPU naming
-
-Each platform generates its own lock file to ensure wheel compatibility:
-- macOS ARM64: `pytorch==2.5.1` (CPU)
-- Linux x86_64: `pytorch==2.5.1` (CPU)
-- Windows x64: `pytorch==2.5.1` (CPU)
-
 ### Switching to CUDA
 
 Only on Linux/Windows with NVIDIA GPU:
