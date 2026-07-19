@@ -316,8 +316,22 @@ def train(
 
         if scheduler is not None:
             # Update the scheduler once per epoch.
-            # - plateau: metric-reactive schedule (here: average train loss)
-            # - cosine:  time-based schedule (depends on epoch index)
+            # SCHEDULER PURPOSE: Modulate the GLOBAL learning rate over the training trajectory.
+            #
+            # Why scheduler? Early in training, loss decreases quickly and we want aggressive
+            # steps (high lr). Later, we approach a minimum and start oscillating around it—
+            # smaller lr helps us settle into the valley instead of bouncing around.
+            #
+            # IMPORTANT DISTINCTION from AdamW:
+            #   - AdamW: per-parameter adaptive updates (each weight gets its own step size)
+            #   - Scheduler: modulates ONE GLOBAL lr that affects ALL parameters together
+            #   - Think of AdamW as "fine-tuning each instrument" and scheduler as
+            #     "turning down the amplifier dial for everyone"
+            #
+            # Two strategies in this trainer:
+            # - plateau: monitors average train loss; if no improvement for N epochs, cut lr
+            # - cosine: smooth cosine decay from lr to near-zero over cfg.epochs
+            #
             if cfg.lr_schedule == "plateau":
                 scheduler.step(avg_loss)
             else:
