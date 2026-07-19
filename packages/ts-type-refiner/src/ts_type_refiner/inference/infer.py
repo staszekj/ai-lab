@@ -251,6 +251,70 @@ def main() -> None:
         cand_lp = float("-inf") if cand_lp is None else cand_lp
         return cand if cand_lp > curr_lp else curr
 
+    # ════════════════════════════════════════════════════════════════════════
+    # INFERENCE LOOP: For each degraded type, generate and validate proposals
+    # ════════════════════════════════════════════════════════════════════════
+    #
+    # Each iteration:
+    #   INPUT candidate:
+    #     {
+    #       "file": "samples/Foo.tsx",
+    #       "kind": "variable",
+    #       "name": "observedElements",
+    #       "context": "const observedElements: Map<unknown, unknown> = new Map();",
+    #       "degradedType": "Map<unknown, unknown>",
+    #       "rule": "map→unknown",
+    #       "siblings": "Measurable, ObservedData"
+    #     }
+    #
+    #   STEP 1: Build prompt for the model
+    #     [REFINE rule=map→unknown | kind=variable | name=observedElements | degraded=Map<unknown, unknown>]
+    #     ---
+    #     const observedElements: Map<unknown, unknown> = new Map();
+    #
+    #   STEP 2: Predictor.predict_n() generates top-5 proposals
+    #     Proposal 1: "Map<Measurable, ObservedData>"  (mean_logprob: -0.3)
+    #     Proposal 2: "Map<string, boolean>"            (mean_logprob: -1.2)
+    #     Proposal 3: "Map<any, any>"                   (mean_logprob: -2.5)
+    #     Proposal 4: "Map<unknown, Record<string>>"    (mean_logprob: -3.1)
+    #     Proposal 5: "Map"                             (mean_logprob: -4.8)
+    #
+    #   STEP 3: Validate each proposal
+    #     For each proposal:
+    #       a) Validator check (rule-specific):
+    #          - "Map<Measurable, ObservedData>" → PASS (has non-unknown type params)
+    #          - "Map<any, any>" → FAIL (still has degraded param)
+    #          - "Map" → FAIL (incomplete generic)
+    #       b) Log-probability threshold (if passed validator):
+    #          - Need: mean_logprob >= min_logprob (e.g., -inf by default, or user sets -1.0)
+    #          - "Map<Measurable, ObservedData>" with -0.3 → PASS
+    #          - "Map<string, boolean>" with -1.2 → PASS (if threshold ≤ -1.2)
+    #
+    #   STEP 4: Accept first proposal that passes BOTH checks
+    #     → Selected: "Map<Measurable, ObservedData>"
+    #
+    #   OUTPUT edit row:
+    #     {
+    #       "file": "samples/Foo.tsx",
+    #       "start": 24,
+    #       "end": 45,
+    #       "degradedType": "Map<unknown, unknown>",
+    #       "suggestion": "Map<Measurable, ObservedData>",
+    #       "accepted": true,
+    #       "reason": "ok",
+    #       "logprob": -0.3,
+    #       "ruleValidatorPassed": true,
+    #       "proposals": [
+    #         {"text": "Map<Measurable, ObservedData>", "logprob": -0.3, ...},
+    #         {"text": "Map<string, boolean>", "logprob": -1.2, ...},
+    #         ...
+    #       ]
+    #     }
+    #
+    # If validator rejects ALL proposals → accepted=false with reason="<validator error>"
+    # If validator passes but logprob too low → accepted=false with best-below-threshold proposal
+    # ════════════════════════════════════════════════════════════════════════
+
     for i, c in enumerate(candidates, 1):
         rule      = c["rule"]
         validator = VALIDATORS.get(rule)

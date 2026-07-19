@@ -945,25 +945,88 @@ class EncoderDecoderModel(nn.Module):
         # None at step 0; grows by one token-slice each step.
         self_kv_list: list[tuple[torch.Tensor, torch.Tensor] | None] = [None] * self.num_layers
 
+        # ════════════════════════════════════════════════════════════════════════
+        # AUTOREGRESSIVE GENERATION LOOP — one token produced per step
+        # ════════════════════════════════════════════════════════════════════════
+        #
+        # WHAT IS THE ENCODER?
+        #   The encoder already ran above (self.encode). It read the full source
+        #   prompt ONCE — e.g. "const enabled : string" — and compressed it into
+        #   encoder_output: a (1, 4, 6) tensor, one vector per source token.
+        #   Think of it as the model's "memory" of what it read.
+        #   The encoder does NOT run again during generation.
+        #
+        # WHAT IS THE DECODER?
+        #   The decoder generates the output token by token, left to right.
+        #   At each step it looks at:
+        #     1. All tokens it has generated so far (via masked self-attention)
+        #     2. The encoder's memory (via cross-attention)
+        #   ...and predicts: "what token comes next?"
+        #
+        # Example: source = "const enabled : string"  →  target = "'ON' | 'OFF'"
+        #
+        #   Step 0: generated = [<BOS>]
+        #           decoder sees <BOS> + encoder memory
+        #           → predicts "'ON'"   (logits[:, -1, :] peaks at token 9)
+        #           → generated = [<BOS>, 'ON']
+        #
+        #   Step 1: generated = [<BOS>, 'ON']
+        #           decoder sees 'ON' (new token) + encoder memory
+        #           → predicts "|"    (logits[:, -1, :] peaks at token 10)
+        #           → generated = [<BOS>, 'ON', '|']
+        #
+        #   Step 2: decoder predicts "'OFF'" → generated = [<BOS>, 'ON', '|', 'OFF']
+        #   Step 3: decoder predicts <EOS> → loop stops
+        #           return [9, 10, 11] = "'ON' | 'OFF'" (strip leading <BOS>)
+        #
+        # KEY INSIGHT: encoder runs ONCE, decoder runs N times (once per output token).
+        # Cross-attention connects them: at every step, every decoder layer asks
+        # "what from the encoder memory is relevant now?"
+        # ════════════════════════════════════════════════════════════════════════
+
         for step in range(max_new_tokens):
-            # Embed only the most-recently appended token.
+            # Take only the LAST generated token — we embed one token at a time.
+            # The KV cache (self_kv_list) already holds all past context.
+            # Example step 1: generated = [[1, 9]], new_id = [[9]] (token "'ON'")
             new_id = generated[:, -1:]
             pos    = torch.tensor([generated.shape[1] - 1], device=src_ids.device)
-            x = self.token_embedding(new_id) + self.positional_embedding(pos)
-            # x: (1, 1, d_model)
 
+            # token_embedding: vocab table (vocab_size × d_model), picks row new_id[0]
+            # positional_embedding: position table (max_seq × d_model), picks row pos
+            # Example: emb("'ON'") + pos_emb(1) = vec of shape (1, 1, 6)
+            x = self.token_embedding(new_id) + self.positional_embedding(pos)
+            # x: (1, 1, d_model) — a single token's representation
+
+            # Run through all decoder blocks. Each block (forward_cached) does:
+            #   1. Masked self-attention: new token attends to all past tokens (KV cache)
+            #   2. Cross-attention: new token attends to ALL encoder positions (precomputed K/V)
+            #   3. FFN: per-token MLP
+            # self_kv_list grows by 1 token slice each step — this IS the KV cache.
             for i, block in enumerate(self.decoder_blocks):
                 x, self_kv_list[i] = block.forward_cached(x, cross_kv_list[i], self_kv_list[i])
 
             x      = self.decoder_final_norm(x)
+
+            # LM head: project from d_model → vocab_size.
+            # (1, 1, 6) → (1, 1, 12) — 12 raw scores, one per vocab token = LOGITS
             logits = self.lm_head(x)
             # logits: (1, 1, vocab_size)
 
+            # Divide by temperature: < 1 → more peaked, > 1 → more random
+            # Example: logits[:, -1, :] = [-0.5, 8.2, -1.3, ...]  (12 values)
             next_token_logits = logits[:, -1, :] / temperature
-            probs      = torch.softmax(next_token_logits, dim=-1)
-            next_token = torch.multinomial(probs, num_samples=1)
-            # next_token: (1, 1)
 
+            # Softmax → probability distribution over vocab (all values sum to 1).
+            # Example: probs = [0.001, 0.93, 0.002, ...]  ← peaks at token 9 ("'ON'")
+            probs      = torch.softmax(next_token_logits, dim=-1)
+
+            # Sample one token index. With temperature=0.01 this is nearly greedy.
+            # Example: samples token 9 with probability 0.93 → "'ON'"
+            next_token = torch.multinomial(probs, num_samples=1)
+            # next_token: (1, 1) — integer token id
+
+            # Append to the growing sequence.
+            # Example: [[1, 9]] cat [[10]] → [[1, 9, 10]] i.e. "<BOS> 'ON' |"
             generated = torch.cat([generated, next_token], dim=1)
 
             if verbose:

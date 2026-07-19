@@ -165,7 +165,32 @@ class Predictor:
 
         unique: dict[tuple[int, ...], PredictCandidate] = {}
 
+        # ════════════════════════════════════════════════════════════════
+        # PROPOSAL GENERATION LOOP: run the model N times, collect unique outputs
+        # ════════════════════════════════════════════════════════════════
+        #
+        # We run model.generate() multiple times for the SAME prompt.
+        # Because temperature > 0, each call samples from a different probability
+        # distribution over next tokens, so results differ between calls:
+        #
+        #   Attempt 1: model.generate(src) → "Map<Measurable, ObservedData>"   (logprob: -0.3)
+        #   Attempt 2: model.generate(src) → "Map<string, boolean>"             (logprob: -1.2)
+        #   Attempt 3: model.generate(src) → "Map<Measurable, ObservedData>"   (duplicate, skip)
+        #   Attempt 4: model.generate(src) → "Map<any, any>"                   (logprob: -2.5)
+        #
+        # After collecting n unique proposals, each is SCORED separately via
+        # teacher-forced rescoring (_score_generated). Teacher-forcing means:
+        # instead of letting the model generate freely, we feed the KNOWN output
+        # token-by-token and ask: "how confident were you at each step?"
+        # This gives a stable, reproducible confidence score (mean_logprob)
+        # even for outputs that were sampled stochastically.
+        #
+        # Final ranking: proposals sorted by mean_logprob (highest = most confident).
+        # ════════════════════════════════════════════════════════════════
+
         for _ in range(attempts):
+            # Temperature > 0 → stochastic sampling, so each call may produce
+            # a different sequence for the same prompt.
             gen = self.model.generate(
                 src_tensor,
                 bos_id=self.bos_id,
@@ -182,6 +207,9 @@ class Predictor:
             if key in unique:
                 continue
 
+            # Teacher-forced rescoring: feed the generated sequence back to the
+            # model token-by-token and compute mean log P(token | prefix).
+            # Closer to 0 = model was confident; very negative = model was uncertain.
             mean_lp = self._score_generated(src_tensor, gen_ids)
             unique[key] = PredictCandidate(
                 text=self.decode(gen_ids),

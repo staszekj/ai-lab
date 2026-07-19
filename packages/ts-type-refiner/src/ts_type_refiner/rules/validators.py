@@ -257,7 +257,21 @@ _RE_MAP = re.compile(r"^Map<\s*(.+?)\s*,\s*(.+?)\s*>$")
 
 
 def validate_map(s: str) -> Tuple[bool, str]:
-    # e.g.  Map<string, number>  →  Map<unknown, unknown>
+    # REVERSE ENGINEERING validation: the rule "map→unknown" says that the original
+    # source had Map<unknown, unknown>. If the model proposes Map<Measurable, ObservedData>,
+    # the validator "tries to degrade it back" — if we remove the type params, do we get
+    # Map<unknown, unknown>? If yes, the proposal is grounded in the training signal.
+    # If the proposal is still Map<unknown, unknown>, it hasn't actually been refined.
+    #
+    # Accepted examples (model understood the degradation):
+    #   - Map<string, number> ✓ (has concrete params, not unknown)
+    #   - Map<Measurable, ObservedData> ✓ (has concrete params)
+    #   - Map<any, any> ✓ (has concrete params, though weak)
+    #
+    # Rejected examples (model hallucinated or didn't improve):
+    #   - Map<unknown, unknown> ✗ (still degraded, no improvement)
+    #   - Map (✗ incomplete, doesn't match regex)
+    #   - MapContainer<string> ✗ (model invented a type, doesn't match regex)
     m = _RE_MAP.match(_strip(s))
     if not m:
         return _fail("expected Map<K, V>")
