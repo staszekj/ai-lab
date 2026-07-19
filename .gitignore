@@ -8,3 +8,5 @@ build/
 node_modules/
 .env
 *.jsonl
+uv*.lock
+!uv-cuda.lock

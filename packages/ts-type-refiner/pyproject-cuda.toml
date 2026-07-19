@@ -8,14 +8,14 @@ dependencies = [
 ]
 
 [dependency-groups]
-dev = ["torch==2.5.1"]
+dev = ["torch==2.5.1+cu121"]
 
 [tool.uv.sources]
-torch = [{ index = "pytorch-default" }]
+torch = [{ index = "pytorch-cu121" }]
 
 [[tool.uv.index]]
-name = "pytorch-default"
-url = "https://download.pytorch.org/whl/"
+name = "pytorch-cu121"
+url = "https://download.pytorch.org/whl/cu121"
 explicit = true
 
 [project.scripts]

@@ -169,10 +169,10 @@ def parse_args() -> argparse.Namespace:
 def main() -> None:
     args = parse_args()
 
+    # Use CUDA if available, otherwise CPU (skip MPS)
+    # CPU is faster than MPS for small model inference on all platforms
     if torch.cuda.is_available():
         device = torch.device("cuda")
-    elif torch.backends.mps.is_available():
-        device = torch.device("mps")
     else:
         device = torch.device("cpu")
     print(f"Device: {device}")
