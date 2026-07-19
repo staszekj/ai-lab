@@ -1,5 +1,8 @@
 {
   "name": "ai-lab",
   "private": true,
-  "packageManager": "pnpm@11.14.0"
+  "packageManager": "pnpm@11.14.0",
+  "scripts": {
+    "fetch-pt": "bash scripts/download-refiner.sh"
+  }
 }
