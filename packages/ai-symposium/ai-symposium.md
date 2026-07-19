@@ -31,17 +31,14 @@
 
 ## Part 2: Transformers Deep Dive (60 min)
 
-### Tokenization
-- [ ] How tokens are created
+### Forward Pass — `packages/ts-type-refiner/src/ts_type_refiner/encoder_decoder_model.py`
+- [ ] In `EncoderDecoderModel.forward()` (approx. lines 887+) the complete forward pass chains encoder and decoder: source code with degraded type goes through encoder (bidirectional self-attention), encoder_output is memory of the source, target type tokens go through decoder (masked self-attention + cross-attention to encoder), final output is logits (batch, tgt_len, vocab_size) — one probability distribution per position for what the next token should be. This is the training-time version using teacher forcing; inference uses `generate()` instead.
 
-### Attention Mechanism
-- [ ] What attention is
+#### Encode: Reading the source — `EncoderDecoderModel.encode()`
+- [ ] In `encode()` (approx. lines 837+) source token IDs are embedded then positional-encoded. Pass through N encoder blocks (default 4), each with bidirectional self-attention — every source token can attend to every other source position, no mask. Output is encoder_output (batch, src_len, d_model), the "memory" of what the source code said.
 
-### The Core Flow: QK^T → Softmax → V → Logits
-- [ ] Query-Key interaction (QK^T)
-- [ ] Normalization (Softmax)
-- [ ] Value projection (V)
-- [ ] Output logits (Logits)
+#### Decode: Writing the target — `EncoderDecoderModel.decode()`
+- [ ] In `decode()` (approx. lines 863+) target token IDs (under teacher forcing) are embedded then positional-encoded. Causal mask prevents token i from attending to positions i+1, i+2, … (can't peek at future). Pass through N decoder blocks, each with: (1) masked self-attention to past target tokens, (2) cross-attention to encoder_output, (3) FFN. Output is logits (batch, tgt_len, vocab_size) — the model's raw prediction for each position.
 
 ### Training Mechanics — `packages/ts-type-refiner/src/ts_type_refiner/training/trainer.py`
 - [ ] In `train()` (approx. lines 120+) the training loop runs for `cfg.epochs` epochs, each epoch loops over mini-batches yielded by `train_batches()` (which rescatters the dataset each epoch)
@@ -49,3 +46,5 @@
 - [ ] **Loss computation** (approx. line 206): cross-entropy loss compares logits against true target tokens. Internally: softmax(logits) → -log(softmax[target_id]) at each position → mean over non-pad positions. Loss MINIMIZED when model peaks at correct tokens
 - [ ] **Backward + step** (approx. lines 212-214): `loss.backward()` computes dL/dw for all model weights via autograd, `clip_grad_norm_()` caps gradient magnitude to prevent exploding gradients (transformer hygiene), `optimizer.step()` updates all w ← w - lr*dL/dw + L2, `scheduler.step()` adjusts learning rate (cosine or ReduceLROnPlateau)
 - [ ] **Evaluation** `val_metric = eval_fn(model)` (approx. line 233): optional caller-provided callback runs model on validation set every `cfg.eval_every` epochs (not used by trainer itself — caller decides early-stopping)
+
+

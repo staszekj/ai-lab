@@ -69,14 +69,6 @@ from dataclasses import dataclass
 import torch
 import torch.nn as nn
 
-
-# [LoRA] LoRA (Low-Rank Adaptation) is a parameter-efficient fine-tuning method.
-# [LoRA] Instead of updating full pretrained weights W, we freeze W and learn
-# [LoRA] a low-rank update DeltaW = B @ A, so only small adapter matrices train.
-# [LoRA] This keeps most model behavior intact while reducing trainable params
-# [LoRA] and VRAM needs.
-
-
 # ══════════════════════════════════════════════════════════════════════
 # MICRO-MODEL — reference dimensions used in all inline comments
 # ══════════════════════════════════════════════════════════════════════
@@ -97,11 +89,6 @@ import torch.nn as nn
 #   tgt_len     =  3   decoder-input tokens: "<bos>", "ON", "|"
 #                      (decoder target "ON | OFF" is tgt_len=3 shifted by 1)
 #
-# ══════════════════════════════════════════════════════════════════════
-
-
-# ══════════════════════════════════════════════════════════════════════
-# ENCODER BLOCK — bidirectional self-attention + FFN (Pre-LN)
 # ══════════════════════════════════════════════════════════════════════
 
 class ManualTransformerEncoderBlock(nn.Module):
@@ -136,39 +123,18 @@ class ManualTransformerEncoderBlock(nn.Module):
             f"d_model ({d_model}) must equal num_heads ({num_heads}) × d_k ({self.d_k})"
         )
 
-        # Attention projections — Q/K/V/O are all (d_model → d_model).
-        # Q,K,V split into heads via reshape inside forward().
-        # [LoRA] Candidate target: encoder self-attention query projection (Q).
-        # [LoRA] Adapting Q changes what each source token asks from context.
         self.W_Q = nn.Linear(d_model, d_model)
-        # [LoRA] Candidate target: encoder self-attention key projection (K).
-        # [LoRA] Adapting K changes how source tokens expose retrievable features.
         self.W_K = nn.Linear(d_model, d_model)
-        # [LoRA] Candidate target: encoder self-attention value projection (V).
-        # [LoRA] Adapting V changes which source features are returned.
         self.W_V = nn.Linear(d_model, d_model)
-        # [LoRA] Candidate target: encoder self-attention output projection (O).
-        # [LoRA] Adapting O changes how multi-head outputs are recombined.
         self.W_O = nn.Linear(d_model, d_model)
 
-        # Feed-forward network: expand to d_ff, GELU, compress back.
-        # d_ff is conventionally 4 × d_model.
-        # [LoRA] Candidate target: FFN expansion (d_model -> d_ff).
-        # [LoRA] This often provides strong adaptation with low-rank updates.
         self.ffn_linear1 = nn.Linear(d_model, d_ff)
         self.ffn_gelu    = nn.GELU()
-        # [LoRA] Candidate target: FFN compression (d_ff -> d_model).
         self.ffn_linear2 = nn.Linear(d_ff, d_model)
 
-        # [LoRA] Showcase-only pseudo integration (commented, non-executable):
-        # [LoRA] W_eff = W_frozen + (B @ A) * (alpha / r)
-        # [LoRA] Typical first targets in this block: W_Q, W_V, ffn_linear1.
+        self.layer_norm_1 = nn.LayerNorm(d_model)
+        self.layer_norm_2 = nn.LayerNorm(d_model)
 
-        # Pre-LN: one LayerNorm before each sub-layer.
-        self.layer_norm_1 = nn.LayerNorm(d_model)  # before attention
-        self.layer_norm_2 = nn.LayerNorm(d_model)  # before FFN
-
-        # Scaling factor 1/sqrt(d_k) prevents softmax saturation when d_k is large.
         self.scale = math.sqrt(self.d_k)
 
     def forward(
@@ -178,23 +144,110 @@ class ManualTransformerEncoderBlock(nn.Module):
         verbose: bool = True,
     ) -> torch.Tensor:
         """
-        Parameters
+        FORWARD: x -> output (BIDIRECTIONAL SELF-ATTENTION + FEED-FORWARD NETWORK)
+        ═════════════════════════════════════════════════════════════════════════════════════════
+        
+        A single Transformer encoder block transforms input embeddings via two mechanisms:
+        (1) Multi-head self-attention: every token attends to every other token (bidirectional)
+        (2) Position-wise feed-forward: non-linear transformation applied per token
+        
+        ARCHITECTURE (Pre-LN: LayerNorm BEFORE each sub-layer):
+        
+        INPUT: x = (batch, seq_len, d_model)  e.g. (2, 10, 256)
+               Token embeddings with positional information already added
+        
+        ┌─ SUB-LAYER 1: BIDIRECTIONAL MULTI-HEAD SELF-ATTENTION ──────────────┐
+        │                                                                       │
+        │ x_norm = LayerNorm(x)  →  (2, 10, 256)                               │
+        │                                                                       │
+        │ Project to Q, K, V (three d_model→d_model linear maps):              │
+        │   Q = W_Q(x_norm)  →  (2, 10, 256)    "What am I looking for?"      │
+        │   K = W_K(x_norm)  →  (2, 10, 256)    "What do I have?"             │
+        │   V = W_V(x_norm)  →  (2, 10, 256)    "What content do I return?"   │
+        │                                                                       │
+        │ Split into heads: (2, 10, 256) → reshape → (2, num_heads, 10, d_k)  │
+        │   With num_heads=8, d_k=32:  (2, 10, 256) → (2, 8, 10, 32)          │
+        │   Each head processes a 32-dimensional subspace independently        │
+        │                                                                       │
+        │ Compute scores: Q @ K^T / sqrt(d_k)  →  (2, 8, 10, 10) SQUARE!      │
+        │   Every position attends to every position (no mask, no causality)   │
+        │   scores[b, h, i, j] = "strength: token i attends to token j?"     │
+        │                                                                       │
+        │ Apply mask (if provided):  scores = scores + attn_mask               │
+        │   Mask: 0 = attend normally, -inf = completely block                │
+        │   After softmax: -inf positions → 0 weight                           │
+        │                                                                       │
+        │ Softmax over last dimension: weights = softmax(scores, dim=-1)       │
+        │   → (2, 8, 10, 10)                                                   │
+        │   Each row is probability distribution: "how much to each position"  │
+        │                                                                       │
+        │ Weighted blend of values: head_out = weights @ V  →  (2, 8, 10, 32) │
+        │   Each token i blends all value vectors j, weighted by weights[i,j] │
+        │                                                                       │
+        │ Merge heads: (2, 8, 10, 32) → (2, 10, 256)  via W_O projection      │
+        │   Concatenate all 8 heads + output projection                        │
+        │                                                                       │
+        │ Residual: x1 = x + attn_out  →  (2, 10, 256)                        │
+        │                                                                       │
+        └───────────────────────────────────────────────────────────────────────┘
+        
+        ┌─ SUB-LAYER 2: FEED-FORWARD NETWORK (position-wise) ─────────────────┐
+        │                                                                       │
+        │ x1_norm = LayerNorm(x1)  →  (2, 10, 256)                             │
+        │                                                                       │
+        │ Expand: Linear(256→1024)(x1_norm)  →  (2, 10, 1024)                 │
+        │   d_ff typically 4× d_model (here 1024 = 4×256)                      │
+        │   Increases capacity for non-linear feature learning                 │
+        │                                                                       │
+        │ Non-linearity: GELU(hidden)  →  (2, 10, 1024)                       │
+        │   Smooth ReLU-like activation, better gradients                      │
+        │                                                                       │
+        │ Compress: Linear(1024→256)(hidden)  →  (2, 10, 256)                 │
+        │   Project back to d_model dimension                                  │
+        │                                                                       │
+        │ Residual: output = x1 + ffn_out  →  (2, 10, 256)                    │
+        │                                                                       │
+        └───────────────────────────────────────────────────────────────────────┘
+        
+        OUTPUT: (batch, seq_len, d_model) = (2, 10, 256)
+                Same shape as input, but with bidirectional context
+                Each token now encodes information from the entire sequence
+        
+        STACKING EFFECT (encoder has N blocks):
+          x0 = embed(src_ids)
+          x1 = block_1(x0)
+          x2 = block_2(x1)
+          ...
+          xN = block_N(xN-1)
+        
+        KEY INSIGHT: BIDIRECTIONAL
+          Unlike decoder (which has causal mask), encoder has NO restrictions.
+          Every token can see every other token (left AND right).
+          This enables building rich contextual representations.
+        
+        INTUITION - Real Example:
+          Input: "Map<unknown>"
+          Token "Map": attends to "Map", "<", "unknown", ">" 
+            → learns it's a CONTAINER type with type parameters
+          Token "<": attends to all positions
+            → learns it's a bracket for type parameters
+          Token "unknown": attends to all positions
+            → learns it's a type parameter (placeholder for concrete type)
+        
+        PARAMETERS
         ----------
-        x         : (batch, seq_len, d_model)
-        attn_mask : optional (seq_len, seq_len) additive mask (0=attend, -inf=block)
-
-        Returns
+        x : (batch, seq_len, d_model)
+            Token embeddings already embedded and positioned
+        attn_mask : (seq_len, seq_len) Tensor or None
+            Optional attention mask (rarely used in encoder)
+            0 = attend, -inf = block (after softmax: -inf → 0)
+        verbose : bool
+            Print tensor shapes during forward pass
+        
+        RETURNS
         -------
         (batch, seq_len, d_model)
-
-        Presentation example (d_model=6, heads=3, d_k=2, src_seq=4):
-            x  "const enabled : string"            (1, 4, 6)
-            Q = W_Q(x)                             (1, 4, 6)
-            Q split into heads                     (1, 3, 4, 2)   [batch, heads, seq, d_k]
-            scores = Q @ K^T / sqrt(2)             (1, 3, 4, 4)   ← SQUARE: every src token × every src token
-            weights = softmax(scores)              (1, 3, 4, 4)   ← each row sums to 1
-            head_out = weights @ V                 (1, 3, 4, 2)
-            concat + W_O                           (1, 4, 6)
+            Contextualized tokens, ready for next block or cross-attention
         """
         batch_size, seq_len, d_model = x.shape
         assert d_model == self.d_model
@@ -203,75 +256,45 @@ class ManualTransformerEncoderBlock(nn.Module):
             print(f"\n{'='*60}")
             print(f"EncoderBlock | x: {x.shape}")
 
-        # ── Pre-LN + multi-head self-attention ───────────────────────
         x_norm1 = self.layer_norm_1(x)
-        # x_norm1: (batch, seq_len, d_model)  e.g. (1, 4, 6)
         if verbose:
             print(f"After LayerNorm 1:                 x_norm1:  {x_norm1.shape}")
 
-        # Project to Q, K, V — three independent (d_model → d_model) linear maps.
-        # Q asks "what am I looking for?", K says "what do I have?",
-        # V says "what do I return if matched?".
-        Q = self.W_Q(x_norm1)    # (1, 4, 6)
-        K = self.W_K(x_norm1)    # (1, 4, 6)
-        V = self.W_V(x_norm1)    # (1, 4, 6)
+        Q = self.W_Q(x_norm1)
+        K = self.W_K(x_norm1)
+        V = self.W_V(x_norm1)
 
-        # Split d_model into `num_heads` independent attention subspaces.
-        # (batch, seq, d_model) → (batch, seq, heads, d_k) → (batch, heads, seq, d_k)
-        # Example: (1, 4, 6) → (1, 4, 3, 2) → (1, 3, 4, 2)
         Q = Q.view(batch_size, seq_len, self.num_heads, self.d_k).transpose(1, 2)
         K = K.view(batch_size, seq_len, self.num_heads, self.d_k).transpose(1, 2)
         V = V.view(batch_size, seq_len, self.num_heads, self.d_k).transpose(1, 2)
-        # Q,K,V: (1, 3, 4, 2)
 
-        # scores[h, i, j] = how much token i attends to token j in head h.
-        # (1, 3, 4, 2) @ (1, 3, 2, 4) = (1, 3, 4, 4) — SQUARE because Q and K
-        # both come from the same source sequence (bidirectional self-attention).
         scores = torch.matmul(Q, K.transpose(-2, -1)) / self.scale
-        # scores: (1, 3, 4, 4)
 
         if attn_mask is not None:
-            # Additive mask: -inf at blocked positions → softmax drives those to 0.
             scores = scores + attn_mask
 
         weights = torch.softmax(scores, dim=-1)
-        # weights: (1, 3, 4, 4) — each row is a probability distribution over src tokens.
-        # Row i sums to 1: token i's attention is fully distributed over all 4 src positions.
 
-        # Weighted sum of values: how much of each V row to mix for each query token.
         head_out = torch.matmul(weights, V)
-        # (1, 3, 4, 4) @ (1, 3, 4, 2) = (1, 3, 4, 2)
 
-        # Merge heads: last two dims (heads, seq, d_k) → (seq, d_model).
-        # (1, 3, 4, 2) → (1, 4, 3, 2) → (1, 4, 6)
         attn_out = head_out.transpose(1, 2).contiguous().view(batch_size, seq_len, self.d_model)
         attn_out = self.W_O(attn_out)
-        # attn_out: (1, 4, 6)
 
-        x1 = x + attn_out   # first residual: (1, 4, 6)
+        x1 = x + attn_out
         if verbose:
             print(f"After attention + residual #1:     x1:       {x1.shape}")
 
-        # ── Pre-LN + feed-forward network ────────────────────────────
-        # FFN applies the same two-layer MLP independently to each token.
-        # Expand: (1, 4, 6) → (1, 4, 12)   [d_model → d_ff, typically 4×]
-        # Compress: (1, 4, 12) → (1, 4, 6) [d_ff → d_model]
         x1_norm = self.layer_norm_2(x1)
-        ffn_hidden = self.ffn_linear1(x1_norm)   # (1, 4, 12)
+        ffn_hidden = self.ffn_linear1(x1_norm)
         ffn_hidden = self.ffn_gelu(ffn_hidden)
-        ffn_out    = self.ffn_linear2(ffn_hidden) # (1, 4, 6)
+        ffn_out    = self.ffn_linear2(ffn_hidden)
 
-        output = x1 + ffn_out   # second residual: (1, 4, 6)
+        output = x1 + ffn_out
         if verbose:
             print(f"After FFN + residual #2:           output:   {output.shape}")
             print(f"{'='*60}")
 
         return output
-
-
-# ══════════════════════════════════════════════════════════════════════
-# DECODER BLOCK — masked self-attn + cross-attn + FFN (Pre-LN)
-# ══════════════════════════════════════════════════════════════════════
 
 class ManualDecoderBlock(nn.Module):
     """
@@ -318,49 +341,24 @@ class ManualDecoderBlock(nn.Module):
         )
         self.scale = math.sqrt(self.d_k)
 
-        # Sub-layer 1: masked self-attention (Q,K,V all from decoder).
-        # [LoRA] Candidate target: decoder masked self-attention projections.
         self.self_W_Q = nn.Linear(d_model, d_model)
         self.self_W_K = nn.Linear(d_model, d_model)
         self.self_W_V = nn.Linear(d_model, d_model)
         self.self_W_O = nn.Linear(d_model, d_model)
 
-        # Sub-layer 2: cross-attention. K and V come from encoder_output.
-        # These are SEPARATE matrices from the self-attention ones — they
-        # learn different transformations.
-        # [LoRA] High-priority target: cross-attention query projection (Q).
-        # [LoRA] This controls what decoder states ask from encoder memory.
         self.cross_W_Q = nn.Linear(d_model, d_model)
-        # [LoRA] High-priority target: cross-attention key projection (K).
-        # [LoRA] This controls how encoder memory is indexed for retrieval.
         self.cross_W_K = nn.Linear(d_model, d_model)
-        # [LoRA] High-priority target: cross-attention value projection (V).
-        # [LoRA] This controls which encoder content is injected into decoder.
         self.cross_W_V = nn.Linear(d_model, d_model)
-        # [LoRA] Candidate target: cross-attention output projection (O).
-        # [LoRA] This controls post-attention mixing into decoder hidden states.
         self.cross_W_O = nn.Linear(d_model, d_model)
 
-        # [LoRA] Showcase-only pseudo integration (commented, non-executable):
-        # [LoRA] Replace selected Linear layers with LoRA-wrapped equivalents.
-        # [LoRA] Train only adapter matrices A/B; keep base W frozen.
-        # [LoRA] Suggested first targets: cross_W_Q, cross_W_K, cross_W_V, cross_W_O.
-
-        # Sub-layer 3: feed-forward network.
-        # [LoRA] Candidate target: decoder FFN expansion (d_model -> d_ff).
         self.ffn_linear1 = nn.Linear(d_model, d_ff)
         self.ffn_gelu    = nn.GELU()
-        # [LoRA] Candidate target: decoder FFN compression (d_ff -> d_model).
         self.ffn_linear2 = nn.Linear(d_ff, d_model)
 
-        # Pre-LN: one LayerNorm before each sub-layer.
-        self.layer_norm_1 = nn.LayerNorm(d_model)  # before masked self-attention
-        self.layer_norm_2 = nn.LayerNorm(d_model)  # before cross-attention
-        self.layer_norm_3 = nn.LayerNorm(d_model)  # before FFN
+        self.layer_norm_1 = nn.LayerNorm(d_model)
+        self.layer_norm_2 = nn.LayerNorm(d_model)
+        self.layer_norm_3 = nn.LayerNorm(d_model)
 
-    # ------------------------------------------------------------------
-    # Generic multi-head attention used by both self- and cross-attention
-    # ------------------------------------------------------------------
     def _multi_head_attention(
         self,
         Q_src: torch.Tensor,
@@ -391,34 +389,23 @@ class ManualDecoderBlock(nn.Module):
         q_len      = Q_src.shape[1]
         kv_len     = K_src.shape[1]
 
-        # Project to Q, K, V; each still (batch, *, d_model).
         Q = W_Q(Q_src)
         K = W_K(K_src)
         V = W_V(V_src)
 
-        # Split into heads. Head dim is moved before sequence dim so the
-        # last two dims are (len, d_k) and matmul broadcasts naturally.
         Q = Q.view(batch_size, q_len,  self.num_heads, self.d_k).transpose(1, 2)
         K = K.view(batch_size, kv_len, self.num_heads, self.d_k).transpose(1, 2)
         V = V.view(batch_size, kv_len, self.num_heads, self.d_k).transpose(1, 2)
-        # Q: (batch, heads, q_len,  d_k)
-        # K: (batch, heads, kv_len, d_k)
-        # V: (batch, heads, kv_len, d_k)
 
-        # Scaled dot-product attention.
         scores = torch.matmul(Q, K.transpose(-2, -1)) / self.scale
-        # scores: (batch, heads, q_len, kv_len)
 
         if attn_mask is not None:
             scores = scores + attn_mask
 
         weights = torch.softmax(scores, dim=-1)
-        # weights: (batch, heads, q_len, kv_len)
 
         head_out = torch.matmul(weights, V)
-        # head_out: (batch, heads, q_len, d_k)
 
-        # Concatenate heads back to d_model.
         out = head_out.transpose(1, 2).contiguous().view(batch_size, q_len, self.d_model)
         return W_O(out)
 
@@ -431,12 +418,163 @@ class ManualDecoderBlock(nn.Module):
         verbose: bool = True,
     ) -> torch.Tensor:
         """
-        Parameters
+        FORWARD: x + encoder_output -> output  (MASKED SELF-ATTN + CROSS-ATTN + FFN)
+        ════════════════════════════════════════════════════════════════════════════════════════
+        
+        A single Transformer decoder block refines target generation via three mechanisms:
+        (1) Masked self-attention: attends only to past/current tokens (causal, no peeking)
+        (2) Cross-attention: attends to encoder output (the "memory")
+        (3) Feed-forward: non-linear transformation per token
+        
+        KEY DIFFERENCE FROM ENCODER:
+          Encoder: bidirectional (every token sees every token)
+          Decoder: MASKED (each token sees only itself and previous tokens)
+          + Cross-attention (all tokens can see entire encoder output)
+        
+        ARCHITECTURE (Pre-LN: LayerNorm BEFORE each sub-layer):
+        
+        INPUT: x = (batch, tgt_len, d_model)  e.g. (2, 5, 256)
+               encoder_output = (batch, src_len, d_model)  e.g. (2, 10, 256)
+        
+        ┌─ SUB-LAYER 1: MASKED SELF-ATTENTION (causal) ────────────────────┐
+        │                                                                    │
+        │ Purpose: Prevent decoder from "cheating" by looking at future    │
+        │          target tokens. Only uses past context during training.  │
+        │                                                                    │
+        │ x_norm = LayerNorm(x)  →  (2, 5, 256)                             │
+        │                                                                    │
+        │ Q = W_Q(x_norm), K = W_K(x_norm), V = W_V(x_norm)  →  each (2,5) │
+        │                                                                    │
+        │ Split into heads: (2, 5, 256) → (2, num_heads, 5, d_k)            │
+        │   With num_heads=8, d_k=32:  →  (2, 8, 5, 32)                     │
+        │                                                                    │
+        │ Attention scores: Q @ K^T / sqrt(d_k)  →  (2, 8, 5, 5) SQUARE!   │
+        │                                                                    │
+        │ CAUSAL MASK APPLICATION:                                          │
+        │   scores = scores + tgt_mask                                       │
+        │                                                                    │
+        │   Causal mask pattern (tgt_len=5):                                │
+        │     Position:  0   1   2   3   4                                   │
+        │            0  [0  -∞  -∞  -∞  -∞]   ← position 0 sees only itself  │
+        │            1  [0   0  -∞  -∞  -∞]   ← position 1 sees 0,1         │
+        │            2  [0   0   0  -∞  -∞]   ← position 2 sees 0,1,2       │
+        │            3  [0   0   0   0  -∞]   ← position 3 sees 0,1,2,3     │
+        │            4  [0   0   0   0   0]   ← position 4 sees all 0-4     │
+        │                                                                    │
+        │   Softmax: -∞ positions → ~0 attention (all weight on allowed)   │
+        │                                                                    │
+        │ Softmax: weights = softmax(scores, dim=-1)  →  (2, 8, 5, 5)       │
+        │   Each row sums to 1, respects causality                          │
+        │                                                                    │
+        │ Context: head_out = weights @ V  →  (2, 8, 5, 32)                 │
+        │   Each token blends past value vectors only                       │
+        │                                                                    │
+        │ Merge heads: (2, 8, 5, 32) → (2, 5, 256) via W_O                  │
+        │                                                                    │
+        │ Residual: x1 = x + self_attn_out  →  (2, 5, 256)                  │
+        │                                                                    │
+        └────────────────────────────────────────────────────────────────────┘
+        
+        ┌─ SUB-LAYER 2: CROSS-ATTENTION (NO mask - see all encoder) ────────┐
+        │                                                                    │
+        │ Purpose: Decoder reads the encoder output here                   │
+        │          "What type information did encoder find in source?"      │
+        │                                                                    │
+        │ x1_norm = LayerNorm(x1)  →  (2, 5, 256)                            │
+        │                                                                    │
+        │ Q comes from decoder (what we're generating):                     │
+        │   Q = W_Q(x1_norm)  →  (2, 5, 256)                                │
+        │                                                                    │
+        │ K, V come from encoder (the full source context):                 │
+        │   K = W_K(encoder_output)  →  (2, 10, 256)                        │
+        │   V = W_V(encoder_output)  →  (2, 10, 256)                        │
+        │                                                                    │
+        │ Split into heads:                                                 │
+        │   Q: (2, 5, 256) → (2, 8, 5, 32)                                  │
+        │   K: (2, 10, 256) → (2, 8, 10, 32)                                │
+        │   V: (2, 10, 256) → (2, 8, 10, 32)                                │
+        │                                                                    │
+        │ Attention scores: Q @ K^T / sqrt(d_k)  →  (2, 8, 5, 10) RECTANGULAR!│
+        │   ↓ Different from self-attn!                                     │
+        │   5 = decoder sequence length                                      │
+        │   10 = source sequence length                                      │
+        │   NOT SQUARE - decoder queries encoder                            │
+        │                                                                    │
+        │   Example (head h, decoder pos 0):                                 │
+        │   scores[0, h, 0, :] = [0.1, 0.2, 0.3, 0.15, ...]  (10 positions) │
+        │   This decoder position's attention over all 10 encoder positions  │
+        │                                                                    │
+        │ NO MASK - decoder can freely attend to all encoder positions:     │
+        │   weights = softmax(scores, dim=-1)  →  (2, 8, 5, 10)             │
+        │   Each decoder token has attention distribution over all src      │
+        │                                                                    │
+        │ Context: head_out = weights @ V  →  (2, 8, 5, 32)                 │
+        │   Blend all encoder value vectors, weighted by attention          │
+        │   Result: decoder tokens informed by encoder observations         │
+        │                                                                    │
+        │ Merge heads: (2, 8, 5, 32) → (2, 5, 256) via W_O                  │
+        │                                                                    │
+        │ Residual: x2 = x1 + cross_attn_out  →  (2, 5, 256)                │
+        │                                                                    │
+        │ INTUITION - Cross-attention is the BRIDGE:                        │
+        │   Decoder says: "I'm generating 'Map', what did encoder find?"    │
+        │   Encoder has: "I saw 'Map' in source code (position 3)"          │
+        │   Cross-attention peaks at position 3 → decoder outputs 'Map'     │
+        │                                                                    │
+        └────────────────────────────────────────────────────────────────────┘
+        
+        ┌─ SUB-LAYER 3: FEED-FORWARD NETWORK ────────────────────────────┐
+        │                                                                  │
+        │ x2_norm = LayerNorm(x2)  →  (2, 5, 256)                          │
+        │                                                                  │
+        │ Expand: Linear(256→1024)(x2_norm)  →  (2, 5, 1024)              │
+        │   d_ff = 4 × d_model (here 1024 = 4×256)                         │
+        │                                                                  │
+        │ Non-linearity: GELU(hidden)  →  (2, 5, 1024)                    │
+        │                                                                  │
+        │ Compress: Linear(1024→256)(hidden)  →  (2, 5, 256)              │
+        │                                                                  │
+        │ Residual: output = x2 + ffn_out  →  (2, 5, 256)                 │
+        │                                                                  │
+        └──────────────────────────────────────────────────────────────────┘
+        
+        OUTPUT: (batch, tgt_len, d_model) = (2, 5, 256)
+                Ready for next decoder block (or LM head → logits)
+        
+        STACKING EFFECT (decoder has N blocks):
+          x0 = embed(tgt_ids)
+          x1 = block_1(x0, enc_out)
+          x2 = block_2(x1, enc_out)
+          ...
+          xN = block_N(xN-1, enc_out)
+          logits = lm_head(xN)
+        
+        KEY DIFFERENCES FROM ENCODER:
+          1. Masked self-attention: CAUSAL - prevents future peeking
+          2. Cross-attention: Q from decoder, K/V from encoder
+          3. Three sub-layers instead of two
+          4. Purpose: GENERATE tokens left-to-right, grounded in encoder memory
+        
+        PARAMETERS
         ----------
-        x              : (batch, tgt_len, d_model)
+        x : (batch, tgt_len, d_model)
+            Target token embeddings with positional encoding
         encoder_output : (batch, src_len, d_model)
-        tgt_mask       : (tgt_len, tgt_len) causal mask for self-attention
-        src_mask       : (tgt_len, src_len) optional padding mask for cross-attention
+            Full encoder output - serves as K,V for cross-attention
+        tgt_mask : (tgt_len, tgt_len) Tensor or None
+            Causal mask for masked self-attention
+            Typically created by _create_causal_mask()
+        src_mask : (tgt_len, src_len) Tensor or None
+            Optional padding mask for cross-attention
+            (rarely used when encoder handles padding)
+        verbose : bool
+            Print tensor shapes during forward pass
+        
+        RETURNS
+        -------
+        (batch, tgt_len, d_model)
+            Refined target representations
+            Ready for next decoder block or projection to logits
         """
         batch_size, tgt_len, d_model = x.shape
         _, src_len, _ = encoder_output.shape
@@ -446,87 +584,48 @@ class ManualDecoderBlock(nn.Module):
             print(f"\n{'='*60}")
             print(f"DecoderBlock | x: {x.shape}  encoder_output: {encoder_output.shape}")
 
-        # ── Sub-layer 1: masked self-attention ───────────────────────
-        # Decoder tokens attend to themselves and PAST decoder tokens only
-        # (enforced by the causal tgt_mask added to scores).
-        #
-        # Presentation: tgt_len=3 ("<bos>","ON","|"), d_model=6, heads=3, d_k=2
-        #   Q=K=V from x_norm1        (1, 3, 6)
-        #   split into heads          (1, 3, 3, 2)   [batch, heads, tgt_len, d_k]
-        #   scores = Q @ K^T          (1, 3, 3, 3)   ← SQUARE: tgt × tgt
-        #   + causal mask             (3, 3)
-        #
-        #              <bos>    ON      |
-        #   <bos>  [   0.      -inf    -inf ]
-        #      ON  [   0.       0.     -inf ]
-        #       |  [   0.       0.      0.  ]
-        #
-        #   weights after softmax     (1, 3, 3, 3)
-        #   head_out = weights @ V    (1, 3, 3, 2)   → concat → (1, 3, 6)
         x_norm1 = self.layer_norm_1(x)
         self_attn_out = self._multi_head_attention(
             Q_src=x_norm1, K_src=x_norm1, V_src=x_norm1,
             W_Q=self.self_W_Q, W_K=self.self_W_K,
             W_V=self.self_W_V, W_O=self.self_W_O,
-            attn_mask=tgt_mask,  # causal
+            attn_mask=tgt_mask,
+
         )
-        x1 = x + self_attn_out   # (1, 3, 6)
+        x1 = x + self_attn_out
+
         if verbose:
             print(f"After masked-self-attn + residual: x1:       {x1.shape}")
 
-        # ── Sub-layer 2: cross-attention ─────────────────────────────
-        # The decoder "reads" the encoder output here.  Q comes from the
-        # decoder (what the decoder is currently thinking about generating),
-        # K and V come from encoder_output (the full source context).
-        # No causal mask — the decoder may attend to ALL encoder positions.
-        #
-        # Presentation: tgt_len=3, src_len=4, heads=3, d_k=2
-        #   Q from decoder x1_norm    (1, 3, 6)  → heads → (1, 3, 3, 2)
-        #   K from encoder_output     (1, 4, 6)  → heads → (1, 3, 4, 2)
-        #   V from encoder_output     (1, 4, 6)  → heads → (1, 3, 4, 2)
-        #
-        #   scores = Q @ K^T          (1, 3, 3, 2) @ (1, 3, 2, 4) = (1, 3, 3, 4)
-        #                             ← NOT SQUARE: 3 decoder rows × 4 encoder cols
-        #
-        #   Each decoder token's row = "how much does this decoder token attend
-        #   to each of the 4 source tokens?".  After training, when generating
-        #   "ON", the "<bos>→ON" row should peak strongly on "enabled" and
-        #   "string" columns, because those tokens carry the type information.
-        #
-        #   weights after softmax     (1, 3, 3, 4)   [tgt_len × src_len per head]
-        #   head_out = weights @ V    (1, 3, 3, 4) @ (1, 3, 4, 2) = (1, 3, 3, 2)
-        #   concat + W_O              (1, 3, 6)
         x1_norm = self.layer_norm_2(x1)
         cross_attn_out = self._multi_head_attention(
-            Q_src=x1_norm,         # Q from decoder   (1, 3, 6)
-            K_src=encoder_output,  # K from encoder   (1, 4, 6)
-            V_src=encoder_output,  # V from encoder   (1, 4, 6)
+            Q_src=x1_norm,
+
+            K_src=encoder_output,
+
+            V_src=encoder_output,
+
             W_Q=self.cross_W_Q, W_K=self.cross_W_K,
             W_V=self.cross_W_V, W_O=self.cross_W_O,
             attn_mask=src_mask,
         )
-        x2 = x1 + cross_attn_out   # (1, 3, 6)
+        x2 = x1 + cross_attn_out
+
         if verbose:
             print(f"After cross-attn + residual:       x2:       {x2.shape}")
 
-        # ── Sub-layer 3: feed-forward network ────────────────────────
-        # Same MLP as in the encoder, applied independently per token position.
-        # (1, 3, 6) → (1, 3, 12) → GELU → (1, 3, 6)
         x2_norm = self.layer_norm_3(x2)
         ffn_hidden = self.ffn_linear1(x2_norm)
         ffn_hidden = self.ffn_gelu(ffn_hidden)
         ffn_out    = self.ffn_linear2(ffn_hidden)
 
-        output = x2 + ffn_out   # (1, 3, 6)
+        output = x2 + ffn_out
+
         if verbose:
             print(f"After FFN + residual:              output:   {output.shape}")
             print(f"{'='*60}")
 
         return output
-
-    # ------------------------------------------------------------------
-    # KV-cache helpers — used by EncoderDecoderModel.generate() only.
-    # ------------------------------------------------------------------
 
     def precompute_cross_kv(
         self, encoder_output: torch.Tensor
@@ -565,7 +664,6 @@ class ManualDecoderBlock(nn.Module):
         """
         batch_size = x.shape[0]
 
-        # ── Sub-layer 1: self-attention ──────────────────────────────
         x_norm1 = self.layer_norm_1(x)
 
         Q     = self.self_W_Q(x_norm1).view(batch_size, 1, self.num_heads, self.d_k).transpose(1, 2)
@@ -578,8 +676,6 @@ class ManualDecoderBlock(nn.Module):
         else:
             full_K, full_V = new_K, new_V
 
-        # No causal mask: Q is always the last position so attending to
-        # full_K/V (all past + current) is already causal by construction.
         scores  = torch.matmul(Q, full_K.transpose(-2, -1)) / self.scale
         weights = torch.softmax(scores, dim=-1)
         head_out = torch.matmul(weights, full_V)
@@ -588,7 +684,6 @@ class ManualDecoderBlock(nn.Module):
         )
         x1 = x + self_attn_out
 
-        # ── Sub-layer 2: cross-attention (precomputed K, V) ──────────
         x1_norm = self.layer_norm_2(x1)
         cross_K, cross_V = cross_kv
 
@@ -601,17 +696,11 @@ class ManualDecoderBlock(nn.Module):
         )
         x2 = x1 + cross_attn_out
 
-        # ── Sub-layer 3: FFN ─────────────────────────────────────────
         x2_norm = self.layer_norm_3(x2)
         ffn_out = self.ffn_linear2(self.ffn_gelu(self.ffn_linear1(x2_norm)))
         output  = x2 + ffn_out
 
         return output, (full_K, full_V)
-
-
-# ══════════════════════════════════════════════════════════════════════
-# ENCODER-DECODER MODEL — full seq2seq Transformer
-# ══════════════════════════════════════════════════════════════════════
 
 @dataclass
 class EncoderDecoderConfig:
@@ -629,7 +718,6 @@ class EncoderDecoderConfig:
     num_heads: int = 4
     d_ff: int = 1024
     num_layers: int = 4
-
 
 class EncoderDecoderModel(nn.Module):
     """
@@ -703,9 +791,6 @@ class EncoderDecoderModel(nn.Module):
         self.decoder_final_norm = nn.LayerNorm(d_model)
 
         # Language modelling head: project decoder output to vocab logits.
-        # [LoRA] Optional target: LM head projection.
-        # [LoRA] Usually lower priority than cross-attention unless vocabulary
-        # [LoRA] behavior itself must shift strongly.
         self.lm_head = nn.Linear(d_model, vocab_size, bias=False)
 
     # ------------------------------------------------------------------
