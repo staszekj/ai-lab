@@ -170,114 +170,132 @@ def train(
         num_batches   = 0
         t_epoch       = time.time()
 
-            # ════════════════════════════════════════════════════════════════════════
-            # TRAINING LOOP — one epoch over all mini-batches
-            # ════════════════════════════════════════════════════════════════════════
-            # Each mini-batch is one "step" of the optimization. We cycle through
-            # train_batches() which yields `(src, tgt_in, tgt_target)` tensor triples.
+        # ════════════════════════════════════════════════════════════════════════
+        # TRAINING LOOP — one epoch over all mini-batches
+        # ════════════════════════════════════════════════════════════════════════
+        # Each mini-batch is one "step" of the optimization. We cycle through
+        # train_batches() which yields `(src, tgt_in, tgt_target)` tensor triples.
+        #
+        # The canonical training loop for seq2seq transformers:
+        #   1. Forward pass: compute logits via teacher forcing
+        #   2. Loss computation: cross-entropy between logits and target labels
+        #   3. Backward pass: compute gradients via autograd
+        #   4. Gradient clipping: prevent vanishing/exploding gradients
+        #   5. Optimizer step: update all model parameters
+        #
+        # Example (batch=2, src_len=4, tgt_len=3, vocab_size=5):
+        #
+        #   Step 1: Forward pass
+        #     src       = [[2, 5, 6, 7], [3, 4, 5, 8]]       shape (2, 4)
+        #     tgt_in    = [[1, 9, 10], [1, 11, 12]]          shape (2, 3)
+        #     tgt_target= [[9, 10, 11], [11, 12, 13]]        shape (2, 3)
+        #     logits    = model(src, tgt_in)                 shape (2, 3, 5)
+        #                 Each logits[b, t, :] is a vec of 5 raw scores (one per vocab token).
+        #
+        #   Step 2: Loss
+        #     We reshape logits to (batch*tgt_len, vocab_size) = (6, 5)
+        #     and tgt_target to (batch*tgt_len,) = (6,)
+        #     Then cross_entropy computes: for each position, -log(softmax(logits)[target_id])
+        #     Loss is MINIMIZED when logits peak at the true target tokens.
+        #
+        #   Step 3-5: Backward + step
+        #     loss.backward() computes dL/dw for every model weight w
+        #     optimizer.step() applies: w <- w - lr * (dL/dw + weight_decay * w)
+        #     scheduler adjusts the LEARNING RATE for the next step
+        # ════════════════════════════════════════════════════════════════════════
+
+        for src, tgt_in, tgt_target in train_batches():
+            optimizer.zero_grad()
+
+            # ──────────────────────────────────────────────────────────────────────
+            # STEP 1: Forward pass — teacher forcing
+            # ──────────────────────────────────────────────────────────────────────
+            # Teacher forcing: the decoder sees the TRUE previous tokens (tgt_in),
+            # not the model's own predictions. This is standard in training — the
+            # model learns to predict the NEXT token given the correct context.
             #
-            # The canonical training loop for seq2seq transformers:
-            #   1. Forward pass: compute logits via teacher forcing
-            #   2. Loss computation: cross-entropy between logits and target labels
-            #   3. Backward pass: compute gradients via autograd
-            #   4. Gradient clipping: prevent vanishing/exploding gradients
-            #   5. Optimizer step: update all model parameters
+            # src     : (batch, src_len) encoder input token ids
+            # tgt_in  : (batch, tgt_len-1) decoder input (shifted target, no <EOS>)
+            # returns : (batch, tgt_len, vocab_size) logits
+            logits = model(src, tgt_in, verbose=False)
+
+            # ──────────────────────────────────────────────────────────────────────
+            # STEP 2: Compute loss — compare logits to true tokens
+            # ──────────────────────────────────────────────────────────────────────
+            # Logits (model output):                 Targets (ground truth):
+            #   logits shape: (batch, tgt_len,       tgt_target shape: (batch, tgt_len)
+            #                   vocab_size)
             #
-            # Example (batch=2, src_len=4, tgt_len=3, vocab_size=5):
+            #   Example (batch=3, tgt_len=5, vocab=10):
             #
-            #   Step 1: Forward pass
-            #     src       = [[2, 5, 6, 7], [3, 4, 5, 8]]       shape (2, 4)
-            #     tgt_in    = [[1, 9, 10], [1, 11, 12]]          shape (2, 3)
-            #     tgt_target= [[9, 10, 11], [11, 12, 13]]        shape (2, 3)
-            #     logits    = model(src, tgt_in)                 shape (2, 3, 5)
-            #                 Each logits[b, t, :] is a vec of 5 raw scores (one per vocab token).
+            #   Batch 0:  [[ 1.2, -0.5, 0.8, ...],    Batch 0:  [2, 5, 8, 3, 0]
+            #             [ 0.3,  2.1, 1.5, ...],                  ↑pad_id (token 0 = padding)
+            #             [ 1.0, -1.2, 0.4, ...],    
+            #             [ 0.1,  0.2, 0.3, ...],     Mask (ignore_index=pad_id):
+            #             [ 2.5,  1.1, 0.0, ...]]     [1, 1, 1, 1, 0]  ← position 4 is padding!
+            #                                                  ↑
+            #   Batch 1, 2: ...similar...
             #
-            #   Step 2: Loss
-            #     We reshape logits to (batch*tgt_len, vocab_size) = (6, 5)
-            #     and tgt_target to (batch*tgt_len,) = (6,)
-            #     Then cross_entropy computes: for each position, -log(softmax(logits)[target_id])
-            #     Loss is MINIMIZED when logits peak at the true target tokens.
+            # Why masking? Sequences have different true lengths; we pad them to the
+            # maximum sequence length in the batch for efficient batching. But the loss
+            # should ONLY accumulate over real tokens, not padding! Without masking:
+            #   - pad_ids get random logits (because decoder never sees them at test time)
+            #   - loss includes these random -log(softmax) terms → noise in gradient
+            #   - model wastes gradient budget trying to predict pad tokens → slower convergence
             #
-            #   Step 3-5: Backward + step
-            #     loss.backward() computes dL/dw for every model weight w
-            #     optimizer.step() applies: w <- w - lr * (dL/dw + weight_decay * w)
-            #     scheduler adjusts the LEARNING RATE for the next step
-            # ════════════════════════════════════════════════════════════════════════
+            # With ignore_index=pad_id, CrossEntropyLoss:
+            #   1. Applies softmax to logits → (batch, tgt_len, vocab_size) probabilities
+            #   2. Takes -log(prob[target_id]) at each position
+            #   3. Multiplies by mask: if target==pad_id, contribution is 0
+            #   4. Returns mean loss ONLY over real (non-pad) positions
+            # Loss is minimized when the model assigns high probability to true tokens.
+            b, t, v = logits.shape
+            loss = loss_fn(
+                logits.reshape(b * t, v),
+                tgt_target.reshape(b * t),
+            )
 
-            for src, tgt_in, tgt_target in train_batches():
-                optimizer.zero_grad()
+            # ──────────────────────────────────────────────────────────────────────
+            # STEP 3: Backward pass — compute gradients via autograd
+            # ──────────────────────────────────────────────────────────────────────
+            # For each model weight w:
+            #   dL/dw is computed by backpropagating through the entire graph
+            #   (encoder → decoder → logits → cross-entropy → loss)
+            # Gradients accumulate in w.grad for all parameters in the model.
+            loss.backward()
 
-                # ──────────────────────────────────────────────────────────────────────
-                # STEP 1: Forward pass — teacher forcing
-                # ──────────────────────────────────────────────────────────────────────
-                # Teacher forcing: the decoder sees the TRUE previous tokens (tgt_in),
-                # not the model's own predictions. This is standard in training — the
-                # model learns to predict the NEXT token given the correct context.
-                #
-                # src     : (batch, src_len) encoder input token ids
-                # tgt_in  : (batch, tgt_len-1) decoder input (shifted target, no <EOS>)x
-                # returns : (batch, tgt_len, vocab_size) logits
-                logits = model(src, tgt_in, verbose=False)
+            # Gradient clipping: cap the norm of the gradient vector to prevent
+            # "exploding gradients" — when early in training softmax outputs are
+            # flat and can produce enormous gradients. max_grad_norm typically 1.0.
+            torch.nn.utils.clip_grad_norm_(model.parameters(), cfg.max_grad_norm)
 
-                # ──────────────────────────────────────────────────────────────────────
-                # STEP 2: Compute loss — compare logits to true tokens
-                # ──────────────────────────────────────────────────────────────────────
-                # Logits (model output):                 Targets (ground truth):
-                #   logits shape: (batch, tgt_len,       tgt_target shape: (batch, tgt_len)
-                #                   vocab_size)
-                #
-                #   Example (batch=3, tgt_len=5, vocab=10):
-                #
-                #   Batch 0:  [[ 1.2, -0.5, 0.8, ...],    Batch 0:  [2, 5, 8, 3, 0]
-                #             [ 0.3,  2.1, 1.5, ...],                  ↑pad_id (token 0 = padding)
-                #             [ 1.0, -1.2, 0.4, ...],    
-                #             [ 0.1,  0.2, 0.3, ...],     Mask (ignore_index=pad_id):
-                #             [ 2.5,  1.1, 0.0, ...]]     [1, 1, 1, 1, 0]  ← position 4 is padding!
-                #                                                  ↑
-                #   Batch 1, 2: ...similar...
-                #
-                # Why masking? Sequences have different true lengths; we pad them to the
-                # maximum sequence length in the batch for efficient batching. But the loss
-                # should ONLY accumulate over real tokens, not padding! Without masking:
-                #   - pad_ids get random logits (because decoder never sees them at test time)
-                #   - loss includes these random -log(softmax) terms → noise in gradient
-                #   - model wastes gradient budget trying to predict pad tokens → slower convergence
-                #
-                # With ignore_index=pad_id, CrossEntropyLoss:
-                #   1. Applies softmax to logits → (batch, tgt_len, vocab_size) probabilities
-                #   2. Takes -log(prob[target_id]) at each position
-                #   3. Multiplies by mask: if target==pad_id, contribution is 0
-                #   4. Returns mean loss ONLY over real (non-pad) positions
-                # Loss is minimized when the model assigns high probability to true tokens.
-                b, t, v = logits.shape
-                loss = loss_fn(
-                    logits.reshape(b * t, v),
-                    tgt_target.reshape(b * t),
-                )
+            # ──────────────────────────────────────────────────────────────────────
+            # STEP 4: Optimizer step — update all model weights
+            # ──────────────────────────────────────────────────────────────────────
+            # Core intuition: ALL optimizers follow the same basic pattern:
+            #   w_new = w_old - (learning_rate) × (gradient_influence)
+            #
+            # Plain SGD:    w_new = w_old - lr * dL/dw
+            #               Simple: just move down the steepest slope by lr amount
+            #
+            # AdamW:        w_new = w_old - lr * m_hat / (√v_hat + eps) - lr * weight_decay * w_old
+            #               More complex: m_hat and v_hat are adaptive moments that smooth the
+            #               gradient signal based on recent history, so:
+            #               - fast-changing weights get smaller steps
+            #               - consistent directions get larger steps
+            #               - weight_decay adds L2 regularization (penalize large weights)
+            #
+            # The formula looks intimidating, but the INTENT is identical:
+            # move weights in the direction opposite to the gradient, with adaptive step size.
+            # (m_hat / √v_hat is just an adaptive scaling factor instead of plain "1")
+            optimizer.step()
 
-                # ──────────────────────────────────────────────────────────────────────
-                # STEP 3: Backward pass — compute gradients via autograd
-                # ──────────────────────────────────────────────────────────────────────
-                # For each model weight w:
-                #   dL/dw is computed by backpropagating through the entire graph
-                #   (encoder → decoder → logits → cross-entropy → loss)
-                # Gradients accumulate in w.grad for all parameters in the model.
-                loss.backward()
-
-                # Gradient clipping: cap the norm of the gradient vector to prevent
-                # "exploding gradients" — when early in training softmax outputs are
-                # flat and can produce enormous gradients. max_grad_norm typically 1.0.
-                torch.nn.utils.clip_grad_norm_(model.parameters(), cfg.max_grad_norm)
-
-                # ──────────────────────────────────────────────────────────────────────
-                # STEP 4: Optimizer step — update all model weights
-                # ──────────────────────────────────────────────────────────────────────
-                # AdamW is applied per-parameter with adaptive learning rates:
-                #   w ← w - lr * m_hat / (√v_hat + eps) - lr * weight_decay * w
-                # where m_hat, v_hat are adaptive moments from recent gradient history.
-                # After step(), all w.grad is NOT zeroed — that is done at the top
-                # of the next iteration via optimizer.zero_grad().
-
+            # Teacher-forced token accuracy (only on non-pad positions).
+            with torch.no_grad():
+                preds = logits.argmax(dim=-1)
+                mask  = tgt_target != pad_id
+                epoch_correct += ((preds == tgt_target) & mask).sum().item()
+                epoch_total   += mask.sum().item()
             epoch_loss += loss.item()
             num_batches += 1
 
