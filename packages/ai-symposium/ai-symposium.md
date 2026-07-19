@@ -43,5 +43,9 @@
 - [ ] Value projection (V)
 - [ ] Output logits (Logits)
 
-### Training Mechanics
-- [ ] Placeholder for training details
+### Training Mechanics — `packages/ts-type-refiner/src/ts_type_refiner/training/trainer.py`
+- [ ] In `train()` (approx. lines 120+) the training loop runs for `cfg.epochs` epochs, each epoch loops over mini-batches yielded by `train_batches()` (which rescatters the dataset each epoch)
+- [ ] **Forward pass** `logits = model(src, tgt_in)` (approx. line 200): encoder-decoder transformer does one forward pass with teacher forcing — decoder sees TRUE previous tokens, not its own predictions. Returns shape (batch, tgt_len, vocab_size), one logits vector per decoder position
+- [ ] **Loss computation** (approx. line 206): cross-entropy loss compares logits against true target tokens. Internally: softmax(logits) → -log(softmax[target_id]) at each position → mean over non-pad positions. Loss MINIMIZED when model peaks at correct tokens
+- [ ] **Backward + step** (approx. lines 212-214): `loss.backward()` computes dL/dw for all model weights via autograd, `clip_grad_norm_()` caps gradient magnitude to prevent exploding gradients (transformer hygiene), `optimizer.step()` updates all w ← w - lr*dL/dw + L2, `scheduler.step()` adjusts learning rate (cosine or ReduceLROnPlateau)
+- [ ] **Evaluation** `val_metric = eval_fn(model)` (approx. line 233): optional caller-provided callback runs model on validation set every `cfg.eval_every` epochs (not used by trainer itself — caller decides early-stopping)
