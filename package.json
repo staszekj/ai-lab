@@ -3,6 +3,8 @@
   "private": true,
   "packageManager": "pnpm@11.14.0",
   "scripts": {
-    "fetch-pt": "bash scripts/download-refiner.sh"
+    "fetch-pt": "bash scripts/download-refiner.sh",
+    "refine": "pnpm --filter refiner-playground refine",
+    "typecheck": "pnpm --filter refiner-playground typecheck"
   }
 }
