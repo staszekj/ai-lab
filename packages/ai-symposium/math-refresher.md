@@ -30,7 +30,7 @@ Example: embedding lookup — weight matrix (vocab × d_model) × one-hot vector
 ```
   A         B          C
 (m × k) × (k × n)  =  (m × n)
-    ↑___↑
+     ↑_____↑
   must match!
             ↑               ↑
          from A           from B

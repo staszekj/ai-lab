@@ -118,6 +118,29 @@ def build_tokenizer(
 
 
 def build_from_jsonl(jsonl_path: str | Path, vocab_size: int = 512) -> TSTokenizer:
+    # Build the tokenizer from the materialized training corpus, not from a
+    # vocabulary list or hand-written token rules.
+    #
+    # Why this matters:
+    # - the JSONL already contains the exact model-facing strings that will be
+    #   seen during training and inference
+    # - every row contributes both the degraded prompt (`input`) and the target
+    #   refinement (`target`), so the tokenizer learns the shared subword units
+    #   that appear on both sides of the task
+    # - this is BPE, not whitespace tokenization: the trainer can split and
+    #   recombine fragments like `React`, `.`, `Dispatch`, `<`, `SetStateAction`,
+    #   `boolean`, `unknown`, `HTML`, `Input`, `Element`, `Map`, and `Record`
+    #   into reusable pieces
+    #
+    # Concrete examples of what the model may see after tokenization:
+    # - `Map<unknown, unknown>` -> `Map`, `<`, `unknown`, `,`, `unknown`, `>`
+    # - `React.Dispatch<React.SetStateAction<boolean>>` -> `React`, `.`,
+    #   `Dispatch`, `<`, `React`, `.`, `SetStateAction`, `<`, `boolean`, `>`, `>`
+    # - `HTMLInputElement | null` -> `HTML`, `Input`, `Element`, `|`, `null`
+    #
+    # The output vocabulary is therefore built around frequent TypeScript and
+    # JSX fragments, which is what makes the refiner able to generalize to new
+    # combinations instead of memorizing entire type strings.
     """
     Build tokenizer from encoder_decoder_pairs.jsonl.
     Uses the materialized `input` (encoder prompt) and `target` fields.

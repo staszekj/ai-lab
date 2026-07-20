@@ -9,6 +9,10 @@
 
 ## Part 1: Practical Pipeline (30 min)
 
+### Before the orchestrator — `packages/refiner-playground/src/run.ts`
+- [ ] where the training data comes from: the source of truth is `packages/ts-type-extractor/data/encoder_decoder_pairs.jsonl`, which is built from real usage examples and refined type pairs; show `packages/ts-type-extractor/data/extracted_usage.example.jsonc`, `packages/ts-type-extractor/data/encoder_decoder_pairs.example.jsonc`, and `packages/ts-type-extractor/data/encoder_decoder_pairs.report.md`
+- [ ] explain what tokens are: the model does not read raw characters or whole words, but BPE subword tokens produced by `packages/ts-type-refiner/src/ts_type_refiner/tokenizer.py`; examples include `Map`, `<`, `unknown`, `,`, `>`, `React`, `.`, `Dispatch`, `HTMLInputElement`, and fragments like `'realClick'` or `SetStateAction`, so a type such as `React.Dispatch<React.SetStateAction<boolean>>` is split into reusable pieces rather than memorized as one giant string. Yes, the tokenizer uses BPE, so it can learn frequent TypeScript-specific fragments and recombine them into novel types at inference time
+
 ### refiner-playground (orchestrator) — `packages/refiner-playground/src/run.ts`
 - [ ] The ruleset is bidirectional (`packages/ts-type-extractor/src/rules/`): `degrade.ts` synthesizes training pairs (precise → degraded for training), `refiner-locate.ts` finds candidates to refine in real code, and `validators.py` (ts-type-refiner) validates proposals during inference — the same rules enforce consistency across the entire pipeline
 - [ ] In `packages/refiner-playground/src/run.ts` `main()` (approx. lines 120+) orchestrates `refiner-locate` which scans source files using hand-written rules to identify which type annotations look degraded and are worth sending to the model
