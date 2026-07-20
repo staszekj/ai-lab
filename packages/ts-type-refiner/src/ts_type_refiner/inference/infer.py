@@ -22,7 +22,7 @@ Usage:
         --input  candidates.jsonl \\
         --output edits.jsonl \\
         --checkpoint packages/ts-type-refiner/checkpoints/refiner.pt \\
-        --tokenizer  packages/ts-type-refiner/tokenizer.json \\
+        --tokenizer  packages/ts-type-refiner/checkpoints/tokenizer.json \\
         [--min-logprob -8.0]
 
 Worked example:
@@ -145,8 +145,12 @@ def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="ts-type-refiner Phase 2 inference")
     p.add_argument("--input",      required=True, help="candidates.jsonl from refiner-locate")
     p.add_argument("--output",     required=True, help="edits.jsonl for refiner-apply")
-    p.add_argument("--checkpoint", default=str(REPO_ROOT / "packages/ts-type-refiner/checkpoints/refiner.pt"))
-    p.add_argument("--tokenizer",  default=str(REPO_ROOT / "packages/ts-type-refiner/tokenizer.json"))
+    default_checkpoint = REPO_ROOT / "packages/ts-type-refiner/checkpoints/refiner.pt"
+    default_tokenizer = REPO_ROOT / "packages/ts-type-refiner/checkpoints/tokenizer.json"
+    legacy_tokenizer = REPO_ROOT / "packages/ts-type-refiner/tokenizer.json"
+
+    p.add_argument("--checkpoint", default=str(default_checkpoint))
+    p.add_argument("--tokenizer",  default=str(default_tokenizer))
     p.add_argument("--min-logprob", type=float, default=float("-inf"),
                    help="reject suggestions with mean token log-prob below this")
     p.add_argument("--num-candidates", type=int, default=5,
@@ -159,7 +163,11 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--max-tgt-len", type=int, default=64)
     p.add_argument("--limit", type=int, default=0,
                    help="process at most N candidates (0 = all)")
-    return p.parse_args()
+    args = p.parse_args()
+    if args.tokenizer == str(default_tokenizer) and not default_tokenizer.exists() and legacy_tokenizer.exists():
+        print(f"WARNING: using legacy tokenizer path {legacy_tokenizer}")
+        args.tokenizer = str(legacy_tokenizer)
+    return args
 
 
 # ══════════════════════════════════════════════════════════════════════

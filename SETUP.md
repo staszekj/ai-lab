@@ -1,17 +1,29 @@
-## Downloading the Checkpoint
+## Downloading Model Artifacts
 
-The project requires `refiner.pt` — a pre-trained TypeScript type refiner model.
+The project requires two paired artifacts:
+
+- `packages/ts-type-refiner/checkpoints/refiner.pt`
+- `packages/ts-type-refiner/checkpoints/tokenizer.json`
+
+`refiner.pt` and `tokenizer.json` are an inseparable pair. Never update only one.
 
 ### Manual Download (Recommended)
 
 If automatic download fails or you prefer manual control:
 
-1. Open: https://drive.google.com/file/d/1mY2bXLAsJ8aq_sADcDDzeG9RqfPwtl6H/view
-2. Click "Download anyway" (Google will warn about file size)
+1. Download `refiner.pt` from:
+   https://drive.google.com/file/d/1mY2bXLAsJ8aq_sADcDDzeG9RqfPwtl6H/view
+2. Download the matching `tokenizer.json` from its Google Drive file.
 3. Move downloaded `refiner.pt` to:
    ```
    packages/ts-type-refiner/checkpoints/refiner.pt
    ```
+4. Move downloaded `tokenizer.json` to:
+   ```
+   packages/ts-type-refiner/checkpoints/tokenizer.json
+   ```
+
+Both files must come from the same release pair.
 
 **Size:** ~33 MB
 
@@ -24,15 +36,21 @@ pnpm fetch-pt
 ```
 
 This script:
-- Downloads from Google Drive automatically
-- Backs up existing checkpoint with `from-google-drive` suffix
+- Downloads `refiner.pt` and `tokenizer.json` from the shared Google Drive `checkpoints` folder
+- Downloads both files to temporary paths and only then swaps them into place
+- If local `checkpoints/` exists, archives it as `checkpoints-YYYYMMDD-HHMMSS`
 - Installs `gdown` if needed
-- Places file at: `packages/ts-type-refiner/checkpoints/refiner.pt`
+- Places files at:
+   - `packages/ts-type-refiner/checkpoints/refiner.pt`
+   - `packages/ts-type-refiner/checkpoints/tokenizer.json`
+
+Tokenizer path used by `refiner-infer` and `pnpm refine`:
+`packages/ts-type-refiner/checkpoints/tokenizer.json`
 
 ### Quick Start
 
 ```bash
-# 1. Download checkpoint
+# 1. Download artifact pair
 pnpm fetch-pt
 
 # 2. Run the refiner

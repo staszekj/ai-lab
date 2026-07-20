@@ -7,10 +7,10 @@ Handles arbitrary TS code without <unk> tokens.
 Usage:
     # Train and save:
     tok = build_tokenizer(corpus_texts)
-    tok.save("tokenizer.json")
+    tok.save("checkpoints/tokenizer.json")
 
     # Load:
-    tok = TSTokenizer.from_file("tokenizer.json")
+    tok = TSTokenizer.from_file("checkpoints/tokenizer.json")
     ids = tok.encode("let x: string = 'on'")
     text = tok.decode(ids)
 """
@@ -25,7 +25,6 @@ from tokenizers.models import BPE
 from tokenizers.trainers import BpeTrainer
 from tokenizers.pre_tokenizers import ByteLevel
 from tokenizers.decoders import ByteLevel as ByteLevelDecoder
-from tokenizers.processors import TemplateProcessing
 
 
 # ── Special tokens ───────────────────────────────────────────────────
@@ -183,7 +182,7 @@ if __name__ == "__main__":
         print()
 
     # Save
-    out_path = "packages/ts-type-refiner/tokenizer.json"
+    out_path = "packages/ts-type-refiner/checkpoints/tokenizer.json"
     tok.save(out_path)
     print(f"Saved to {out_path}")
 

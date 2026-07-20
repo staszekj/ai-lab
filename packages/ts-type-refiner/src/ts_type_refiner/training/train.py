@@ -44,8 +44,8 @@ def _find_repo_root() -> Path:
 
 REPO_ROOT            = _find_repo_root()
 DATA_PATH            = REPO_ROOT / "packages/ts-type-extractor/data/encoder_decoder_pairs.jsonl"
-TOKENIZER_PATH       = REPO_ROOT / "packages/ts-type-refiner/tokenizer.json"
 CHECKPOINT_DIR       = REPO_ROOT / "packages/ts-type-refiner/checkpoints"
+TOKENIZER_PATH       = CHECKPOINT_DIR / "tokenizer.json"
 CHECKPOINT_PATH      = CHECKPOINT_DIR / "refiner.pt"
 BEST_CHECKPOINT_PATH = CHECKPOINT_DIR / "refiner_best.pt"
 

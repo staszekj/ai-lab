@@ -62,7 +62,8 @@ const CANDIDATES     = path.join(TMP_DIR, "candidates.jsonl");
 const EDITS          = path.join(TMP_DIR, "edits.jsonl");
 
 const CHECKPOINT     = path.join(REFINER_DIR, "checkpoints", "refiner.pt");
-const TOKENIZER      = path.join(REFINER_DIR, "tokenizer.json");
+const TOKENIZER      = path.join(REFINER_DIR, "checkpoints", "tokenizer.json");
+const LEGACY_TOKENIZER = path.join(REFINER_DIR, "tokenizer.json");
 
 // ══════════════════════════════════════════════════════════════════════
 // CLI
@@ -145,10 +146,15 @@ function ensureCheckpoint(): void {
     console.error(`  train the model first: uv run --package ts-type-refiner refiner-train`);
     process.exit(1);
   }
-  if (!fs.existsSync(TOKENIZER)) {
-    console.error(`✗ tokenizer not found: ${TOKENIZER}`);
-    process.exit(1);
+  if (fs.existsSync(TOKENIZER)) return;
+  if (fs.existsSync(LEGACY_TOKENIZER)) {
+    console.warn(`⚠ tokenizer found in legacy path: ${LEGACY_TOKENIZER}`);
+    console.warn(`  preferred path is now: ${TOKENIZER}`);
+    return;
   }
+  console.error(`✗ tokenizer not found: ${TOKENIZER}`);
+  console.error(`  (legacy path also missing: ${LEGACY_TOKENIZER})`);
+  process.exit(1);
 }
 
 // ══════════════════════════════════════════════════════════════════════
@@ -244,7 +250,7 @@ function main(): void {
     "--input", CANDIDATES,
     "--output", EDITS,
     "--checkpoint", CHECKPOINT,
-    "--tokenizer",  TOKENIZER,
+    "--tokenizer",  fs.existsSync(TOKENIZER) ? TOKENIZER : LEGACY_TOKENIZER,
   ];
   if (args.minLogprob !== null) inferArgs.push("--min-logprob", args.minLogprob);
   run("uv", inferArgs, REPO_ROOT);

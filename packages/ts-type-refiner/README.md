@@ -27,14 +27,14 @@ The companion package `ts-type-extractor` produces both the training data
 
 | Command | Reads | Writes |
 |---|---|---|
-| `refiner-train` | `packages/ts-type-extractor/data/training_pairs.jsonl` | `checkpoints/refiner.pt`, `tokenizer.json` |
+| `refiner-train` | `packages/ts-type-extractor/data/training_pairs.jsonl` | `checkpoints/refiner.pt`, `checkpoints/tokenizer.json` |
 | `refiner-infer --input candidates.jsonl --output edits.jsonl` | candidates from `refiner-locate.ts` | edits for `refiner-apply.ts` |
 
 Both run via `uv run --package ts-type-refiner <name>`.
 
 `refiner-infer` flags:
 - `--checkpoint` (default `checkpoints/refiner.pt`)
-- `--tokenizer`  (default `tokenizer.json`)
+- `--tokenizer`  (default `checkpoints/tokenizer.json`)
 - `--min-logprob` reject suggestions below threshold (default `-inf`)
 - `--max-src-len 256`, `--max-tgt-len 64`
 - `--limit N` process at most N candidates (0 = all)
@@ -49,8 +49,8 @@ Both run via `uv run --package ts-type-refiner <name>`.
 from ts_type_refiner.tokenizer import TSTokenizer, build_from_jsonl
 
 tok = build_from_jsonl("training_pairs.jsonl", vocab_size=2048)
-tok.save("tokenizer.json")
-tok = TSTokenizer.from_file("tokenizer.json")
+tok.save("checkpoints/tokenizer.json")
+tok = TSTokenizer.from_file("checkpoints/tokenizer.json")
 
 ids  = tok.encode("string")          # add_bos / add_eos kwargs available
 text = tok.decode(ids)               # skip_special=True by default
@@ -111,7 +111,7 @@ extract.ts ──► extracted_types.jsonl
                                                                             │
 refiner-locate.ts ──► candidates.jsonl ──► refiner-infer ──► edits.jsonl ──► refiner-apply.ts ──► patched .ts files
                                                   ▲
-                                                  └── uses refiner.pt + tokenizer.json + VALIDATORS
+                                                  └── uses refiner.pt + checkpoints/tokenizer.json + VALIDATORS
 ```
 
 Synchronization triangle: the rule names in `degrade.ts`, `refiner-locate.ts`
