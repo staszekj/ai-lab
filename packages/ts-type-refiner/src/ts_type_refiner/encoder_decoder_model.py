@@ -69,28 +69,6 @@ from dataclasses import dataclass
 import torch
 import torch.nn as nn
 
-# ══════════════════════════════════════════════════════════════════════
-# MICRO-MODEL — reference dimensions used in all inline comments
-# ══════════════════════════════════════════════════════════════════════
-#
-# Inline comments throughout this file show concrete tensor shapes and
-# matrix examples using a tiny "micro-model" for reference. Every number in
-# the comments can be traced back to one of these names:
-#
-#   vocab_size  = 12   tokens: <pad> <bos> const let var enabled : string number ON | OFF
-#   d_model     =  6   embedding / hidden dimension (must equal num_heads × d_k)
-#   num_heads   =  3   parallel attention heads
-#   d_k         =  2   = d_model // num_heads  — dimension per head
-#   d_ff        = 12   feed-forward inner dimension (here 2 × d_model; prod. uses 4 ×)
-#   num_layers  =  2   encoder blocks AND decoder blocks
-#   max_seq_len = 16   positional embedding table size
-#   batch       =  1   always 1 in presentation examples
-#   src_len     =  4   source tokens: "const", "enabled", ":", "string"
-#   tgt_len     =  3   decoder-input tokens: "<bos>", "ON", "|"
-#                      (decoder target "ON | OFF" is tgt_len=3 shifted by 1)
-#
-# ══════════════════════════════════════════════════════════════════════
-
 class ManualTransformerEncoderBlock(nn.Module):
     """
     A single Pre-LN Transformer encoder block.
