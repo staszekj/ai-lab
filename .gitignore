@@ -10,3 +10,7 @@ node_modules/
 *.jsonl
 uv*.lock
 !uv-cuda.lock
+
+# macOS Finder metadata
+.DS_Store
+**/.DS_Store
