@@ -11,14 +11,16 @@ The project requires two paired artifacts:
 
 If automatic download fails or you prefer manual control:
 
-1. Download `refiner.pt` from:
-   https://drive.google.com/file/d/1mY2bXLAsJ8aq_sADcDDzeG9RqfPwtl6H/view
-2. Download the matching `tokenizer.json` from its Google Drive file.
-3. Move downloaded `refiner.pt` to:
+1. Open folder:
+   https://drive.google.com/drive/folders/1198fm78bonAy-A4FfH4jh6-kPHpburDR
+2. Download these two files from that folder:
+   - `refiner.pt`
+   - `tokenizer.json`
+3. Put `refiner.pt` here:
    ```
    packages/ts-type-refiner/checkpoints/refiner.pt
    ```
-4. Move downloaded `tokenizer.json` to:
+4. Put `tokenizer.json` here:
    ```
    packages/ts-type-refiner/checkpoints/tokenizer.json
    ```
