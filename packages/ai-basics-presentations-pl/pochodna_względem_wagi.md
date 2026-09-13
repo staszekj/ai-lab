@@ -72,22 +72,23 @@ argumencie musi odpowiadać $n$ w drugim.
 
 Macierze wag wyznaczają granice kolejnych warstw. Po lewej stronie wchodzą
 sygnały poprzedniej warstwy, a po prawej wychodzi inna liczba sygnałów.
-Softmax (eng: softmax) przekształca cały wektor wartości pre-aktywacji
-(eng: pre-activations) naraz.
+Każda warstwa ukryta stosuje funkcję aktywacji (eng: activation function)
+elementowo, a softmax (eng: softmax) przekształca cały wektor logitów
+(eng: logits) na wyjściu sieci.
 
 ```text
  wejscie                                                                                          wyjscie
 
-                              +----------+ ----------------> z_1^(l-1) -+                     +-> h_1^(l-1)
- x_1 -----------------------> |          | ----------------> z_2^(l-1) -+                     +-> h_2^(l-1)
- x_2 -----------------------> | W^(l-1)  | ----------------> z_3^(l-1) -+---- [--softmax--] --+-> h_3^(l-1)
- x_3 -----------------------> |          | ----------------> z_4^(l-1) -+                     +-> h_4^(l-1)
-                              +----------+ ----------------> z_5^(l-1) -+                     +-> h_5^(l-1)
+                              +----------+ ----------------> z_1^(l-1) -> [--ReLU--] -> h_1^(l-1)
+ x_1 -----------------------> |          | ----------------> z_2^(l-1) -> [--ReLU--] -> h_2^(l-1)
+ x_2 -----------------------> | W^(l-1)  | ----------------> z_3^(l-1) -> [--ReLU--] -> h_3^(l-1)
+ x_3 -----------------------> |          | ----------------> z_4^(l-1) -> [--ReLU--] -> h_4^(l-1)
+                              +----------+ ----------------> z_5^(l-1) -> [--ReLU--] -> h_5^(l-1)
 
- h_1^(l-1) -----------------> +----------+ ----------------> z_1^(l) -+                     +-> h_1^(l)
- h_2^(l-1) -----------------> |          | ----------------> z_2^(l) -+                     +-> h_2^(l)
- h_3^(l-1) -----------------> | W^(l)    | ----------------> z_3^(l) -+---- [--softmax--] --+-> h_3^(l)
- h_4^(l-1) -----------------> |          | ----------------> z_4^(l) -+                     +-> h_4^(l)
+ h_1^(l-1) -----------------> +----------+ ----------------> z_1^(l) -> [--GELU--] -> h_1^(l)
+ h_2^(l-1) -----------------> |          | ----------------> z_2^(l) -> [--GELU--] -> h_2^(l)
+ h_3^(l-1) -----------------> | W^(l)    | ----------------> z_3^(l) -> [--GELU--] -> h_3^(l)
+ h_4^(l-1) -----------------> |          | ----------------> z_4^(l) -> [--GELU--] -> h_4^(l)
  h_5^(l-1) -----------------> +----------+
 
  h_1^(l) -------------------> +----------+ ----------------> z_1^logits -+                    +-> p_1
@@ -98,9 +99,9 @@ Softmax (eng: softmax) przekształca cały wektor wartości pre-aktywacji
  p_1, p_2, p_3 -------------------------------------------------> L
 ```
 
-W przykładzie warstwy mają odpowiednio $3$, $5$, $4$ i $3$ składowe. Softmax
-działa wspólnie na całym wektorze $z^{(r)}$, zwracając wektor $h^{(r)}$ o tej
-samej liczbie składowych.
+W przykładzie warstwy mają odpowiednio $3$, $5$, $4$ i $3$ składowe. Funkcja
+aktywacji $\varphi$ działa elementowo na wartościach $z^{(r)}$, a softmax działa
+wspólnie tylko na wektorze logitów, zwracając prawdopodobieństwa $p_j$.
 
 W rzeczywistej sieci softmax działa na całym wektorze logitów (eng: logits),
 a nie niezależnie na każdej linii. Schemat pokazuje najważniejsze zależności:
@@ -132,44 +133,82 @@ $$
 \frac{\partial L}{\partial p_j} = -\frac{y_j}{p_j}.
 $$
 
-## Softmax (eng: softmax)
+## Funkcje aktywacji (eng: activation functions)
 
-Prawdopodobieństwa (eng: probabilities) otrzymujemy z wartości wejściowych
-softmaxa $u_j$. W ostatniej warstwie wartościami $u_j$ są logity
-(eng: logits):
+W pierwszej warstwie ukrytej schemat stosuje ReLU (eng: rectified linear unit):
 
 $$
-p_j = \frac{e^{u_j}}
-{\sum_{q=1}^{K}e^{u_q}}.
+\operatorname{ReLU}(x) =
+\begin{cases}
+0 & \text{dla } x \leq 0, \\
+x & \text{dla } x > 0,
+\end{cases}
+\qquad
+\operatorname{ReLU}'(x) =
+\begin{cases}
+0 & \text{dla } x < 0, \\
+1 & \text{dla } x > 0.
+\end{cases}
+$$
+
+W punkcie $x=0$ pochodna ReLU nie istnieje; w praktyce biblioteki zwykle
+przyjmują tam wartość $0$.
+
+W drugiej warstwie ukrytej schemat stosuje GELU (eng: Gaussian error linear
+unit):
+
+$$
+\operatorname{GELU}(x) = x\Phi(x),
+\qquad
+\operatorname{GELU}'(x) = \Phi(x) + x\phi(x),
+$$
+
+gdzie $\Phi(x)$ jest dystrybuantą standardowego rozkładu normalnego
+(eng: standard normal cumulative distribution function), a $\phi(x)$ jego
+funkcją gęstości (eng: probability density function):
+
+$$
+\phi(x) = \frac{1}{\sqrt{2\pi}}e^{-x^2/2}.
+$$
+
+## Softmax (eng: softmax)
+
+Prawdopodobieństwa (eng: probabilities) otrzymujemy z logitów (eng: logits):
+
+$$
+p_j = \frac{e^{z_j^{\mathrm{logits}}}}
+{\sum_{q=1}^{K}e^{z_q^{\mathrm{logits}}}}.
 $$
 
 Zatem $\sum_j p_j=1$. Ponieważ softmax jest funkcją wielu wejść, pochodną
-$p_j$ względem wartości wejściowej $u_q$ rozbijamy na dwa przypadki.
+$p_j$ względem logitu $z_q^{\mathrm{logits}}$ rozbijamy na dwa przypadki.
 
 Jeżeli różniczkujemy względem wartości wejściowej odpowiadającej temu samemu indeksowi
 ($q=j$), otrzymujemy:
 
 $$
-\frac{\partial p_j}{\partial u_j}
+\frac{\partial p_j}{\partial z_j^{\mathrm{logits}}}
 = p_j(1-p_j).
 $$
 
 Jeżeli różniczkujemy względem innej wartości wejściowej ($q\neq j$), otrzymujemy:
 
 $$
-\frac{\partial p_j}{\partial u_q}
+\frac{\partial p_j}{\partial z_q^{\mathrm{logits}}}
 = -p_jp_q.
 $$
 
-Indeks $j$ oznacza prawdopodobieństwo, natomiast $q$ wartość wejściową $u_q$,
-względem której różniczkujemy.
+Indeks $j$ oznacza prawdopodobieństwo, natomiast $q$ logit, względem którego
+różniczkujemy.
 
-Łącząc cross-entropy z softmaxem, otrzymujemy końcową pochodną straty
-względem wejścia softmaxa:
+Jeżeli wartości docelowe tworzą rozkład prawdopodobieństwa, czyli
+$\sum_j y_j=1$ (w szczególności są zakodowane one-hot), to po połączeniu
+cross-entropy z softmaxem otrzymujemy końcową pochodną straty względem
+wejścia softmaxa:
 
 $$
 \begin{aligned}
-\frac{\partial L}{\partial u_q}
+\frac{\partial L}{\partial z_q^{\mathrm{logits}}}
 &= \left(-\frac{y_q}{p_q}\right)p_q(1-p_q)
 + \sum_{j\neq q}\left(-\frac{y_j}{p_j}\right)(-p_jp_q) \\
 &= p_q - y_q.
@@ -180,53 +219,131 @@ $$
 
 Przyjmijmy:
 
+<div align="left">
+
 $$
 z_a^{(r)}=\sum_b W_{ab}^{(r)}h_b^{(r-1)},
 \qquad
-h_a^{(r)}=\operatorname{softmax}(\mathbf{z}^{(r)})_a.
+h_a^{(r)}=\varphi(z_a^{(r)}).
 $$
 
-Zatem każda składowa $h_a^{(r)}$ zależy od całego wektora
-$\mathbf{z}^{(r)}$, a nie tylko od $z_a^{(r)}$.
+</div>
 
-Pełny łańcuch dla wagi (eng: weight) $W_{km}^{(l-1)}$ ma postać:
+Funkcja $\varphi$ jest aktywacją elementową, więc $h_a^{(r)}$ zależy tylko od
+$z_a^{(r)}$.
+
+Najkrótsze postacie pochodnych względem wag warstwy wyjściowej i warstwy $l$
+są następujące:
+
+<div align="left">
+
+$$
+\begin{aligned}
+\frac{\partial L}{\partial W_{q i}^{\mathrm{out}}}
+&=
+\sum_j
+\frac{\partial L}{\partial p_j}
+\frac{\partial p_j}{\partial z_q^{\mathrm{logits}}}
+\frac{\partial z_q^{\mathrm{logits}}}{\partial W_{q i}^{\mathrm{out}}} \\
+&=
+(p_q-y_q)h_i^{(l)}.
+\end{aligned}
+$$
+
+$$
+\begin{aligned}
+\frac{\partial L}{\partial W_{a k}^{(l)}}
+&=
+\sum_q
+\sum_j
+\frac{\partial L}{\partial p_j}
+\frac{\partial p_j}{\partial z_q^{\mathrm{logits}}}
+\frac{\partial z_q^{\mathrm{logits}}}{\partial h_a^{(l)}}
+\frac{\partial h_a^{(l)}}{\partial z_a^{(l)}}
+\frac{\partial z_a^{(l)}}{\partial W_{a k}^{(l)}}
+\\
+&=
+\sum_q\sum_j
+\frac{\partial L}{\partial p_j}
+\frac{\partial p_j}{\partial z_q^{\mathrm{logits}}}
+W_{q a}^{\mathrm{out}}
+\varphi'\bigl(z_a^{(l)}\bigr)
+h_k^{(l-1)}.
+\end{aligned}
+$$
+
+</div>
+
+<div align="left">
 
 $$
 \begin{aligned}
 \frac{\partial L}{\partial W_{km}^{(l-1)}}
-&=\sum_j\sum_q\sum_i\sum_a\sum_c\sum_b
+&=\sum_j\sum_q\sum_i
 \frac{\partial L}{\partial p_j}
 \frac{\partial p_j}{\partial z_q^{\mathrm{logits}}}
 \frac{\partial z_q^{\mathrm{logits}}}{\partial h_i^{(l)}}
-\frac{\partial h_i^{(l)}}{\partial z_a^{(l)}}
-\frac{\partial z_a^{(l)}}{\partial h_c^{(l-1)}}
-\frac{\partial h_c^{(l-1)}}{\partial z_b^{(l-1)}}
-\frac{\partial z_b^{(l-1)}}{\partial W_{km}^{(l-1)}}.
+\frac{\partial h_i^{(l)}}{\partial z_i^{(l)}}
+\frac{\partial z_i^{(l)}}{\partial h_k^{(l-1)}}
+\frac{\partial h_k^{(l-1)}}{\partial z_k^{(l-1)}}
+\frac{\partial z_k^{(l-1)}}{\partial W_{km}^{(l-1)}} \\
+&=\sum_j\sum_q\sum_i
+\frac{\partial L}{\partial p_j}
+\frac{\partial p_j}{\partial z_q^{\mathrm{logits}}}
+W_{q i}^{\mathrm{out}}
+\varphi'\bigl(z_i^{(l)}\bigr)
+W_{i k}^{(l)}
+\varphi'\bigl(z_k^{(l-1)}\bigr)
+h_m^{(l-2)}.
 \end{aligned}
 $$
+
+</div>
 
 Jeżeli $x_i=h_i^{(l-2)}$ jest $i$-tym wejściem (eng: input) do sieci,
 analogiczny łańcuch dla pochodnej względem tego wejścia ma postać:
 
+<div align="left">
+
 $$
 \begin{aligned}
 \frac{\partial L}{\partial x_i}
-&=\sum_j\sum_q\sum_r\sum_a\sum_c\sum_b
+&=\sum_j\sum_q\sum_a\sum_k
 \frac{\partial L}{\partial p_j}
 \frac{\partial p_j}{\partial z_q^{\mathrm{logits}}}
-\frac{\partial z_q^{\mathrm{logits}}}{\partial h_r^{(l)}}
-\frac{\partial h_r^{(l)}}{\partial z_a^{(l)}}
-\frac{\partial z_a^{(l)}}{\partial h_c^{(l-1)}}
-\frac{\partial h_c^{(l-1)}}{\partial z_b^{(l-1)}}
-\frac{\partial z_b^{(l-1)}}{\partial x_i}.
+\frac{\partial z_q^{\mathrm{logits}}}{\partial h_a^{(l)}}
+\frac{\partial h_a^{(l)}}{\partial z_a^{(l)}}
+\frac{\partial z_a^{(l)}}{\partial h_k^{(l-1)}}
+\frac{\partial h_k^{(l-1)}}{\partial z_k^{(l-1)}}
+\frac{\partial z_k^{(l-1)}}{\partial x_i} \\
+&=\sum_j\sum_q\sum_a\sum_k
+\frac{\partial L}{\partial p_j}
+\frac{\partial p_j}{\partial z_q^{\mathrm{logits}}}
+W_{q a}^{\mathrm{out}}
+\varphi'\bigl(z_a^{(l)}\bigr)
+W_{a k}^{(l)}
+\varphi'\bigl(z_k^{(l-1)}\bigr)
+W_{k i}^{(l-1)}.
 \end{aligned}
 $$
+
+</div>
 
 ## Aktualizacja parametrów (eng: parameter update)
 
 Powyższe pochodne można wykorzystać w metodzie stochastycznego spadku
 gradientowego (eng: stochastic gradient descent, SGD). W kroku SGD
 aktualizujemy wagę według wzoru:
+
+$$
+W_{q i}^{\mathrm{out}} \leftarrow W_{q i}^{\mathrm{out}}
+- \eta \frac{\partial L}{\partial W_{q i}^{\mathrm{out}}}.
+$$
+
+$$
+W_{a k}^{(l)} \leftarrow W_{a k}^{(l)}
+- \eta \frac{\partial L}{\partial W_{a k}^{(l)}}.
+$$
 
 $$
 W_{km}^{(l-1)} \leftarrow W_{km}^{(l-1)}
@@ -246,7 +363,8 @@ Współczynnik $\eta > 0$ jest krokiem uczenia (eng: learning rate).
 AdamW korzysta z ruchomej średniej (eng: moving average) gradientu
 (eng: gradient) oraz jego kwadratu. Dla dowolnego optymalizowanego parametru
 $\omega$ i gradientu
-$g_t = \partial L / \partial \omega_t$ obliczamy:
+$g_t = \partial L / \partial \omega_t$ przyjmujemy wartości początkowe
+$m_0=0$ i $v_0=0$, a następnie obliczamy:
 
 $$
 \begin{aligned}
