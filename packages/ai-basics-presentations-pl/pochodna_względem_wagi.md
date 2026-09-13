@@ -1,5 +1,12 @@
 # Pochodna funkcji straty względem wagi (eng: loss derivative with respect to a weight)
 
+Pochodną (eng: derivative) funkcji $f$ w punkcie $x$ definiujemy jako granicę
+ilorazu różnicowego (eng: difference quotient):
+
+$$
+f'(x) = \lim_{h \to 0}\frac{f(x+h)-f(x)}{(x+h)-x}.
+$$
+
 ## Gradient (eng: gradient)
 
 Najpierw rozważmy funkcję jednej zmiennej:
@@ -127,33 +134,47 @@ $$
 
 ## Softmax (eng: softmax)
 
-Prawdopodobieństwa (eng: probabilities) otrzymujemy z logitów (eng: logits):
+Prawdopodobieństwa (eng: probabilities) otrzymujemy z wartości wejściowych
+softmaxa $u_j$. W ostatniej warstwie wartościami $u_j$ są logity
+(eng: logits):
 
 $$
-p_j = \frac{e^{z_j}}
-{\sum_{q=1}^{K}e^{z_q}}.
+p_j = \frac{e^{u_j}}
+{\sum_{q=1}^{K}e^{u_q}}.
 $$
 
 Zatem $\sum_j p_j=1$. Ponieważ softmax jest funkcją wielu wejść, pochodną
-$p_j$ względem wartości wejściowej $z_q$ rozbijamy na dwa przypadki.
+$p_j$ względem wartości wejściowej $u_q$ rozbijamy na dwa przypadki.
 
 Jeżeli różniczkujemy względem wartości wejściowej odpowiadającej temu samemu indeksowi
 ($q=j$), otrzymujemy:
 
 $$
-\frac{\partial p_j}{\partial z_j}
+\frac{\partial p_j}{\partial u_j}
 = p_j(1-p_j).
 $$
 
 Jeżeli różniczkujemy względem innej wartości wejściowej ($q\neq j$), otrzymujemy:
 
 $$
-\frac{\partial p_j}{\partial z_q}
+\frac{\partial p_j}{\partial u_q}
 = -p_jp_q.
 $$
 
-Indeks $j$ oznacza prawdopodobieństwo, natomiast $q$ wartość wejściową,
+Indeks $j$ oznacza prawdopodobieństwo, natomiast $q$ wartość wejściową $u_q$,
 względem której różniczkujemy.
+
+Łącząc cross-entropy z softmaxem, otrzymujemy końcową pochodną straty
+względem wejścia softmaxa:
+
+$$
+\begin{aligned}
+\frac{\partial L}{\partial u_q}
+&= \left(-\frac{y_q}{p_q}\right)p_q(1-p_q)
++ \sum_{j\neq q}\left(-\frac{y_j}{p_j}\right)(-p_jp_q) \\
+&= p_q - y_q.
+\end{aligned}
+$$
 
 ## Reguła łańcuchowa (eng: chain rule)
 
@@ -162,23 +183,25 @@ Przyjmijmy:
 $$
 z_a^{(r)}=\sum_b W_{ab}^{(r)}h_b^{(r-1)},
 \qquad
-h_a^{(r)}=\varphi(z_a^{(r)}),
-\quad \text{gdzie } \varphi \text{ jest funkcją aktywacji (eng: activation function).}
+h_a^{(r)}=\operatorname{softmax}(\mathbf{z}^{(r)})_a.
 $$
+
+Zatem każda składowa $h_a^{(r)}$ zależy od całego wektora
+$\mathbf{z}^{(r)}$, a nie tylko od $z_a^{(r)}$.
 
 Pełny łańcuch dla wagi (eng: weight) $W_{km}^{(l-1)}$ ma postać:
 
 $$
 \begin{aligned}
 \frac{\partial L}{\partial W_{km}^{(l-1)}}
-&=\sum_j\sum_q\sum_i
+&=\sum_j\sum_q\sum_i\sum_a\sum_c\sum_b
 \frac{\partial L}{\partial p_j}
 \frac{\partial p_j}{\partial z_q^{\mathrm{logits}}}
 \frac{\partial z_q^{\mathrm{logits}}}{\partial h_i^{(l)}}
-\frac{\partial h_i^{(l)}}{\partial z_i^{(l)}}
-\frac{\partial z_i^{(l)}}{\partial h_k^{(l-1)}}
-\frac{\partial h_k^{(l-1)}}{\partial z_k^{(l-1)}}
-\frac{\partial z_k^{(l-1)}}{\partial W_{km}^{(l-1)}}.
+\frac{\partial h_i^{(l)}}{\partial z_a^{(l)}}
+\frac{\partial z_a^{(l)}}{\partial h_c^{(l-1)}}
+\frac{\partial h_c^{(l-1)}}{\partial z_b^{(l-1)}}
+\frac{\partial z_b^{(l-1)}}{\partial W_{km}^{(l-1)}}.
 \end{aligned}
 $$
 
@@ -188,14 +211,14 @@ analogiczny łańcuch dla pochodnej względem tego wejścia ma postać:
 $$
 \begin{aligned}
 \frac{\partial L}{\partial x_i}
-&=\sum_j\sum_q\sum_a\sum_k
+&=\sum_j\sum_q\sum_r\sum_a\sum_c\sum_b
 \frac{\partial L}{\partial p_j}
 \frac{\partial p_j}{\partial z_q^{\mathrm{logits}}}
-\frac{\partial z_q^{\mathrm{logits}}}{\partial h_a^{(l)}}
-\frac{\partial h_a^{(l)}}{\partial z_a^{(l)}}
-\frac{\partial z_a^{(l)}}{\partial h_k^{(l-1)}}
-\frac{\partial h_k^{(l-1)}}{\partial z_k^{(l-1)}}
-\frac{\partial z_k^{(l-1)}}{\partial x_i}.
+\frac{\partial z_q^{\mathrm{logits}}}{\partial h_r^{(l)}}
+\frac{\partial h_r^{(l)}}{\partial z_a^{(l)}}
+\frac{\partial z_a^{(l)}}{\partial h_c^{(l-1)}}
+\frac{\partial h_c^{(l-1)}}{\partial z_b^{(l-1)}}
+\frac{\partial z_b^{(l-1)}}{\partial x_i}.
 \end{aligned}
 $$
 
