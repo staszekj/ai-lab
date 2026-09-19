@@ -235,6 +235,12 @@ $z_a^{(r)}$.
 Najkrótsze postacie pochodnych względem wag warstwy wyjściowej i warstwy $l$
 są następujące:
 
+$$
+\frac{\partial L}{\partial p_j}
+\frac{\partial p_j}{\partial z_q^{\mathrm{logits}}}
+= (p_q-y_q).
+$$
+
 <div align="left">
 
 $$
