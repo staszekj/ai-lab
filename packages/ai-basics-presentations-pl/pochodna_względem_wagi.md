@@ -2,7 +2,7 @@
 
 Pochodną (eng: derivative) funkcji $f$ w punkcie $x$ definiujemy jako granicę
 ilorazu różnicowego (eng: difference quotient):
-
+{}+ \eta_t \lambda \omega_t.
 $$
 f'(x) = \lim_{h \to 0}\frac{f(x+h)-f(x)}{(x+h)-x}.
 $$
@@ -38,32 +38,20 @@ traktujemy jako wektor wierszowy, a wektor po prawej jako wektor kolumnowy.
 Po prawej stronie każdego równania znajduje się odpowiadający mu zapis
 kształtu tensora w PyTorch, na przykład `(3,)` dla wektora o trzech elementach.
 
-$$
-\underbrace{\mathbf{u}}_{1 \times n}
-\mathbin{@}
-\underbrace{\mathbf{v}}_{n \times 1}
-=
-\underbrace{s}_{1 \times 1}
-\qquad \texttt{PyTorch: (3,) @ (3,) -> ()}.
-$$
+```text
+u [1 x n] @ v [n x 1] = s [1 x 1]
+PyTorch: (3,) @ (3,) -> ()
+```
 
-$$
-\underbrace{\mathbf{u}}_{1 \times n}
-\mathbin{@}
-\underbrace{A}_{n \times m}
-=
-\underbrace{\mathbf{w}}_{1 \times m}
-\qquad \texttt{PyTorch: (3,) @ (3, 5) -> (5,)}.
-$$
+```text
+u [1 x n] @ A [n x m] = w [1 x m]
+PyTorch: (3,) @ (3, 5) -> (5,)
+```
 
-$$
-\underbrace{A}_{m \times n}
-\mathbin{@}
-\underbrace{B}_{n \times p}
-=
-\underbrace{C}_{m \times p}
-\qquad \texttt{PyTorch: (5, 3) @ (3, 4) -> (5, 4)}.
-$$
+```text
+A [m x n] @ B [n x p] = C [m x p]
+PyTorch: (5, 3) @ (3, 4) -> (5, 4)
+```
 
 Mnożenie jest możliwe, gdy wewnętrzne wymiary są równe: $n$ w pierwszym
 argumencie musi odpowiadać $n$ w drugim.
@@ -116,7 +104,7 @@ x_i \xrightarrow{W^{(l-1)}} z_k^{(l-1)}
 \xrightarrow{\varphi} h_a^{(l)}
 \xrightarrow{W^{\mathrm{out}}} z_q^{\mathrm{logits}}
 \xrightarrow{\mathrm{softmax}} \mathbf{p}
-\xrightarrow{\mathrm{cross\mathchar`-entropy}} L.
+\xrightarrow{\text{cross-entropy}} L.
 $$
 
 Rozważmy funkcję straty, czyli entropię krzyżową (eng: cross-entropy):
@@ -138,13 +126,13 @@ $$
 W pierwszej warstwie ukrytej schemat stosuje ReLU (eng: rectified linear unit):
 
 $$
-\operatorname{ReLU}(x) =
+\mathrm{ReLU}(x) =
 \begin{cases}
 0 & \text{dla } x \leq 0, \\
 x & \text{dla } x > 0,
 \end{cases}
 \qquad
-\operatorname{ReLU}'(x) =
+\mathrm{ReLU}'(x) =
 \begin{cases}
 0 & \text{dla } x < 0, \\
 1 & \text{dla } x > 0.
@@ -158,9 +146,9 @@ W drugiej warstwie ukrytej schemat stosuje GELU (eng: Gaussian error linear
 unit):
 
 $$
-\operatorname{GELU}(x) = x\Phi(x),
+\mathrm{GELU}(x) = x\Phi(x),
 \qquad
-\operatorname{GELU}'(x) = \Phi(x) + x\phi(x),
+\mathrm{GELU}'(x) = \Phi(x) + x\phi(x),
 $$
 
 gdzie $\Phi(x)$ jest dystrybuantą standardowego rozkładu normalnego
@@ -210,7 +198,7 @@ $$
 \begin{aligned}
 \frac{\partial L}{\partial z_q^{\mathrm{logits}}}
 &= \left(-\frac{y_q}{p_q}\right)p_q(1-p_q)
-+ \sum_{j\neq q}\left(-\frac{y_j}{p_j}\right)(-p_jp_q) \\
+{}+ \sum_{j\neq q}\left(-\frac{y_j}{p_j}\right)(-p_jp_q) \\
 &= p_q - y_q.
 \end{aligned}
 $$
@@ -342,18 +330,15 @@ gradientowego (eng: stochastic gradient descent, SGD). W kroku SGD
 aktualizujemy wagę według wzoru:
 
 $$
-W_{q i}^{\mathrm{out}} \leftarrow W_{q i}^{\mathrm{out}}
-- \eta \frac{\partial L}{\partial W_{q i}^{\mathrm{out}}}.
+W_{q i}^{\mathrm{out}} \leftarrow W_{q i}^{\mathrm{out}} - \eta \frac{\partial L}{\partial W_{q i}^{\mathrm{out}}}.
 $$
 
 $$
-W_{a k}^{(l)} \leftarrow W_{a k}^{(l)}
-- \eta \frac{\partial L}{\partial W_{a k}^{(l)}}.
+W_{a k}^{(l)} \leftarrow W_{a k}^{(l)} - \eta \frac{\partial L}{\partial W_{a k}^{(l)}}.
 $$
 
 $$
-W_{km}^{(l-1)} \leftarrow W_{km}^{(l-1)}
-- \eta \frac{\partial L}{\partial W_{km}^{(l-1)}}.
+W_{km}^{(l-1)} \leftarrow W_{km}^{(l-1)} - \eta \frac{\partial L}{\partial W_{km}^{(l-1)}}.
 $$
 
 Analogicznie można aktualizować wejście, na przykład $x_n$:
